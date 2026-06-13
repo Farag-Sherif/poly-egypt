@@ -68,7 +68,12 @@ export default async function ProductDetailPage({ params }) {
 
   const productId = id.split("-")[0];
 
-  const productData = await getProduct(productId);
+  let productData;
+  try {
+    productData = await getProduct(productId);
+  } catch (error) {
+    console.error("Failed to fetch product:", error);
+  }
 
   if (!productData || !productData.item) {
     return redirect(`/`);

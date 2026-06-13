@@ -86,14 +86,7 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
     return await response.json();
   } catch (error) {
     console.error('API request failed:', error);
-    if (error instanceof Error) {
-      try {
-        return JSON.parse(error.message) as T;
-      } catch {
-        return { error: error.message, status: 'error' } as T;
-      }
-    }
-    return { error: 'An unexpected error occurred', status: 'error' } as T;
+    throw error;
   }
 }
 
