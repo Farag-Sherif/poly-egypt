@@ -7,7 +7,7 @@ interface FetchOptions extends RequestInit {
   credentials?: RequestCredentials;
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL;
+const BASE_URL = import.meta.env.VITE_API_URL || "https://admin.poly-egypt.com/api";
 
 function getCurrentLocale(): string {
   if (typeof window === 'undefined') return routing.defaultLocale;

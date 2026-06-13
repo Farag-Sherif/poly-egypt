@@ -91,9 +91,10 @@ export default function Collections({ categoryId }) {
                         className="lazyload"
                         alt={`banner-${currentName?.toLowerCase()}`}
                         src={
-                          subcategory.logo
-                            ? `https://atlala.test.do-go.net/images/${subcategory.logo}`
-                            : "/images/placeholder.jpg"
+                          subcategory.logo_path ||
+                          (subcategory.logo
+                            ? `https://admin.poly-egypt.com/images/${subcategory.logo}`
+                            : "/images/placeholder.jpg")
                         }
                         width={450}
                         height={600}
@@ -133,10 +134,10 @@ export default function Collections({ categoryId }) {
                         className="lazyload"
                         alt={`banner-${currentName?.toLowerCase()}`}
                         src={
-                          category.logo_path || category.logo
-                            ? category.logo_path ||
-                              `https://atlala.test.do-go.net/images/${category.logo}`
-                            : "/images/placeholder.jpg"
+                          category.logo_path ||
+                          (category.logo
+                            ? `https://admin.poly-egypt.com/images/${category.logo}`
+                            : "/images/placeholder.jpg")
                         }
                         width={450}
                         height={600}
