@@ -16,7 +16,7 @@ export default function CartModal() {
     isAddedToCartProducts,
     isCartLoading,
     currency,
-  } = useContextElement();
+  } = useContextElement() || {};
   // const [userAddress, setUserAddress] = useState(null);
   const t = useTranslations();
   // useEffect(() => {

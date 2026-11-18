@@ -99,81 +99,97 @@ export async function invalidateLocaleCache(newLocale: string): Promise<void> {
   clearApiCache();
 }
 
-async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
+async function fetchApi<T>(endpoint: string, options: FetchOptions = {}, retries = 2): Promise<T> {
   const locale = getCurrentLocale();
   const { cache = 'no-store', tags = [], forceRefresh, ...restOptions } = options;
 
-  try {
-    const token = getAuthToken();
+  let lastError: any;
 
-    // Construct headers ensuring 'Accept': 'application/json' is always present
-    const headers = new Headers();
-    headers.set('Accept', 'application/json');
-    headers.set('X-Localization', locale);
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const token = getAuthToken();
 
-    if (restOptions.headers) {
-      if (restOptions.headers instanceof Headers) {
-        restOptions.headers.forEach((value, key) => {
-          headers.set(key, value);
-        });
-      } else if (Array.isArray(restOptions.headers)) {
-        restOptions.headers.forEach(([key, value]) => {
-          headers.set(key, value);
-        });
-      } else {
-        Object.entries(restOptions.headers).forEach(([key, value]) => {
-          if (value !== undefined && value !== null) {
-            headers.set(key, String(value));
-          }
-        });
+      // Construct headers ensuring 'Accept': 'application/json' is always present
+      const headers = new Headers();
+      headers.set('Accept', 'application/json');
+      headers.set('X-Localization', locale);
+      if (token) {
+        headers.set('Authorization', `Bearer ${token}`);
       }
-    }
 
-    // Force Accept header to stay application/json
-    headers.set('Accept', 'application/json');
-
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
-      ...restOptions,
-      cache,
-      headers,
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        clearCookieToken();
-        clearApiCache();
-        console.warn(`[API] 401 Unauthorized for ${endpoint}. Cleared session token and cache.`);
-        let errorData: any = { status: 401, error: 'Unauthorized', message: 'Unauthenticated.', items: [] };
-        try {
-          const text = await response.text();
-          if (text) {
-            const parsed = JSON.parse(text);
-            errorData = { ...errorData, ...parsed };
-          }
-        } catch {
-          // Keep default errorData on text parse failure
+      if (restOptions.headers) {
+        if (restOptions.headers instanceof Headers) {
+          restOptions.headers.forEach((value, key) => {
+            headers.set(key, value);
+          });
+        } else if (Array.isArray(restOptions.headers)) {
+          restOptions.headers.forEach(([key, value]) => {
+            headers.set(key, value);
+          });
+        } else {
+          Object.entries(restOptions.headers).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+              headers.set(key, String(value));
+            }
+          });
         }
-        return errorData as unknown as T;
       }
 
-      const errorText = await response.text();
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch {
-        errorData = { error: errorText, status: response.status };
+      // Force Accept header to stay application/json
+      headers.set('Accept', 'application/json');
+
+      const response = await fetch(`${BASE_URL}${endpoint}`, {
+        ...restOptions,
+        cache,
+        headers,
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          clearCookieToken();
+          clearApiCache();
+          console.warn(`[API] 401 Unauthorized for ${endpoint}. Cleared session token and cache.`);
+          let errorData: any = { status: 401, error: 'Unauthorized', message: 'Unauthenticated.', items: [] };
+          try {
+            const text = await response.text();
+            if (text) {
+              const parsed = JSON.parse(text);
+              errorData = { ...errorData, ...parsed };
+            }
+          } catch {
+            // Keep default errorData on text parse failure
+          }
+          return errorData as unknown as T;
+        }
+
+        // Intermittent 5xx server/database error: retry up to retries times
+        if (response.status >= 500 && attempt < retries) {
+          await new Promise((res) => setTimeout(res, 400 * (attempt + 1)));
+          continue;
+        }
+
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText, status: response.status };
+        }
+        throw new Error(JSON.stringify(errorData));
       }
-      throw new Error(JSON.stringify(errorData));
+
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt < retries) {
+        await new Promise((res) => setTimeout(res, 400 * (attempt + 1)));
+        continue;
+      }
     }
-
-    return await response.json();
-  } catch (error) {
-    console.error(`API request failed [${endpoint}]:`, error);
-    throw error;
   }
+
+  console.error(`API request failed [${endpoint}]:`, lastError);
+  throw lastError;
 }
 
 export async function get<T>(endpoint: string, options?: FetchOptions): Promise<T> {

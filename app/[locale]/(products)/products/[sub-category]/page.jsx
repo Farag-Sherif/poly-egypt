@@ -6,9 +6,11 @@ import Link from "@/i18n/navigation";
 import React from "react";
 
 export default async function ProductStylePage1({ params }) {
-  const { "sub-category": subCategory, locale } = await params;
-  const subCategoryId = subCategory?.split("-")[0];
-  const subCategoryName = decodeURIComponent(subCategory?.split("-")[1]);
+  const resolvedParams = params ? (typeof params.then === 'function' ? await params : params) : {};
+  const { "sub-category": subCategory = "", locale = "en" } = resolvedParams;
+  const subCategoryId = subCategory ? subCategory.split("-")[0] : null;
+  const rawName = subCategory && subCategory.includes("-") ? subCategory.split("-").slice(1).join("-") : "";
+  const subCategoryName = rawName ? decodeURIComponent(rawName) : "";
 
   return (
     <>

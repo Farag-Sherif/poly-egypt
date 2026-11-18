@@ -81,9 +81,7 @@ export default function Products1({
     price,
     availability,
     brands,
-    filtered,
     sortingOption,
-    sorted,
     activeFilterOnSale,
   } = state;
 
@@ -138,10 +136,62 @@ export default function Products1({
         });
       }
     }
-  }, [products, price]);
+  }, [products, price[0], price[1]]);
+
+  // Apply filters to products (client-side filtering for current page)
+  const filtered = useMemo(() => {
+    if (products.length === 0) return [];
+
+    let filteredArrays = [];
+
+    if (brands.length) {
+      const filteredByBrands = products.filter((elm) =>
+        brands.every((el) => elm.filterBrands.includes(el))
+      );
+      filteredArrays.push(filteredByBrands);
+    }
+
+    if (availability !== "All") {
+      const filteredByavailability = products.filter(
+        (elm) => availability.value === elm.inStock
+      );
+      filteredArrays.push(filteredByavailability);
+    }
+
+    if (activeFilterOnSale) {
+      const filteredByonSale = products.filter((elm) => elm.oldPrice);
+      filteredArrays.push(filteredByonSale);
+    }
+
+    const filteredByPrice = products.filter(
+      (elm) => elm.price >= price[0] && elm.price <= price[1]
+    );
+    filteredArrays.push(filteredByPrice);
+
+    return products.filter((item) =>
+      filteredArrays.every((array) => array.includes(item))
+    );
+  }, [price, availability, brands, activeFilterOnSale, products]);
+
+  // Apply sorting to filtered products
+  const sorted = useMemo(() => {
+    if (!filtered || filtered.length === 0) return [];
+    if (sortingOption === t("priceAscending")) {
+      return [...filtered].sort((a, b) => a.price - b.price);
+    } else if (sortingOption === t("priceDescending")) {
+      return [...filtered].sort((a, b) => b.price - a.price);
+    } else if (sortingOption === t("titleAscending")) {
+      return [...filtered].sort((a, b) => a.title.localeCompare(b.title));
+    } else if (sortingOption === t("titleDescending")) {
+      return [...filtered].sort((a, b) => b.title.localeCompare(a.title));
+    }
+    return filtered;
+  }, [filtered, sortingOption, t]);
 
   const allProps = {
     ...state,
+    filtered,
+    sorted,
     setPrice: (value) => dispatch({ type: "SET_PRICE", payload: value }),
     setAvailability: (value) => {
       value == availability
@@ -165,70 +215,6 @@ export default function Products1({
       dispatch({ type: "CLEAR_FILTER" });
     },
   };
-
-  // Apply filters to products (client-side filtering for current page)
-  useEffect(() => {
-    if (products.length === 0) return;
-
-    let filteredArrays = [];
-
-    if (brands.length) {
-      const filteredByBrands = [...products].filter((elm) =>
-        brands.every((el) => elm.filterBrands.includes(el))
-      );
-      filteredArrays = [...filteredArrays, filteredByBrands];
-    }
-
-    if (availability !== "All") {
-      const filteredByavailability = [...products].filter(
-        (elm) => availability.value === elm.inStock
-      );
-      filteredArrays = [...filteredArrays, filteredByavailability];
-    }
-
-    if (activeFilterOnSale) {
-      const filteredByonSale = [...products].filter((elm) => elm.oldPrice);
-      filteredArrays = [...filteredArrays, filteredByonSale];
-    }
-
-    const filteredByPrice = [...products].filter(
-      (elm) => elm.price >= price[0] && elm.price <= price[1]
-    );
-    filteredArrays = [...filteredArrays, filteredByPrice];
-
-    const commonItems = [...products].filter((item) =>
-      filteredArrays.every((array) => array.includes(item))
-    );
-
-    dispatch({ type: "SET_FILTERED", payload: commonItems });
-  }, [price, availability, brands, activeFilterOnSale, products]);
-
-  // Apply sorting to filtered products
-  useEffect(() => {
-    if (sortingOption === t("priceAscending")) {
-      dispatch({
-        type: "SET_SORTED",
-        payload: [...filtered].sort((a, b) => a.price - b.price),
-      });
-    } else if (sortingOption === t("priceDescending")) {
-      dispatch({
-        type: "SET_SORTED",
-        payload: [...filtered].sort((a, b) => b.price - a.price),
-      });
-    } else if (sortingOption === t("titleAscending")) {
-      dispatch({
-        type: "SET_SORTED",
-        payload: [...filtered].sort((a, b) => a.title.localeCompare(b.title)),
-      });
-    } else if (sortingOption === t("titleDescending")) {
-      dispatch({
-        type: "SET_SORTED",
-        payload: [...filtered].sort((a, b) => b.title.localeCompare(a.title)),
-      });
-    } else {
-      dispatch({ type: "SET_SORTED", payload: filtered });
-    }
-  }, [filtered, sortingOption, t]);
 
   // Handle pagination - server-side pagination
   const handlePageChange = (newPage) => {

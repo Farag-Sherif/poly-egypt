@@ -18,7 +18,7 @@ export default function QuickView() {
     isAddedtoCompareItem,
     cartProducts,
     updateQuantity,
-  } = useContextElement();
+  } = useContextElement() || {};
 
   const openModalSizeChoice = () => {
     const bootstrap = require("bootstrap"); // dynamically import bootstrap

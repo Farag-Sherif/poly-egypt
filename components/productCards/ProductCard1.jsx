@@ -98,6 +98,10 @@ export default function ProductCard1({
   // Get calculated prices
   const { currentPrice, originalPrice, hasDiscount } = calculatePrices(product);
 
+  const productDetailUrl = product?.title
+    ? `/product-detail/${product.id}-${encodeURIComponent(product.title)}`
+    : `/product-detail/${product?.id || ""}`;
+
   // Helper function to check if product is in favorites
   const isProductInFavorites = (productId) => {
     if (!favorites || isLoadingFavorites) return false;
@@ -174,7 +178,7 @@ export default function ProductCard1({
         } ${radiusClass} `}
       >
         <Link
-          href={`/product-detail/${product.id}-${product.title}`}
+          href={productDetailUrl}
           className="product-img"
         >
           {currentImage && currentImage.trim() !== "" && (
@@ -391,7 +395,7 @@ export default function ProductCard1({
       </div>
 
       <div className="card-product-info">
-        <Link href={`/product-detail/${product.id}`} className="title link">
+        <Link href={productDetailUrl} className="title link">
           {product.title}
         </Link>
         <span className="price">

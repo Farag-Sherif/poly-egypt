@@ -5,7 +5,7 @@ import { useContextElement } from "@/context/Context";
 import { allProducts } from "@/data/products";
 
 export default function Wishlist() {
-  const { removeFromWishlist, wishList } = useContextElement();
+  const { removeFromWishlist, wishList } = useContextElement() || {};
   const [items, setItems] = useState([]);
   useEffect(() => {
     setItems([...allProducts.filter((elm) => wishList.includes(elm.id))]);

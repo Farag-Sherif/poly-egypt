@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { createContext, useContext, useMemo, useCallback } from 'react';
 import enMessages from '@/messages/en.json';
 import arMessages from '@/messages/ar.json';
 import { routing } from './routing';
@@ -28,10 +28,13 @@ export function useLocale() {
 
 export function useTranslations(namespace) {
   const { messages } = useContext(I18nContext);
-  return (key) => {
-    const fullKey = namespace ? `${namespace}.${key}` : key;
-    return getValueByPath(messages, fullKey) ?? key;
-  };
+  return useCallback(
+    (key) => {
+      const fullKey = namespace ? `${namespace}.${key}` : key;
+      return getValueByPath(messages, fullKey) ?? key;
+    },
+    [messages, namespace]
+  );
 }
 
 export function getMessagesForLocale(locale) {

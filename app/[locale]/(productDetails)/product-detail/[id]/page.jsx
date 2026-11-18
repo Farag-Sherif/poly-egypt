@@ -64,9 +64,14 @@ const getLocalizedProduct = (product, locale) => {
 };
 
 export default async function ProductDetailPage({ params }) {
-  const { id, locale } = await params;
+  const resolvedParams = params ? (typeof params.then === 'function' ? await params : params) : {};
+  const { id = "", locale = "en" } = resolvedParams;
 
-  const productId = id.split("-")[0];
+  const productId = id ? id.toString().split("-")[0] : null;
+
+  if (!productId) {
+    return redirect(`/`);
+  }
 
   let productData;
   try {
@@ -76,7 +81,29 @@ export default async function ProductDetailPage({ params }) {
   }
 
   if (!productData || !productData.item) {
-    return redirect(`/`);
+    return (
+      <>
+        <Topbar6 bgColor="bg-main" />
+        <Header1 />
+        <div className="container py-5 text-center" style={{ minHeight: "50vh" }}>
+          <h3 className="heading mb-3">
+            {locale === "ar" ? "تعذر تحميل المنتج" : "Product Not Found"}
+          </h3>
+          <p className="text-muted mb-4">
+            {locale === "ar"
+              ? "عذراً، تعذر العثور على المنتج المطلوب أو حدث خطأ مؤقت في الاتصال بالخادم."
+              : "Sorry, the requested product could not be loaded or a temporary server issue occurred."}
+          </p>
+          <a
+            href={`/${locale}`}
+            className="tf-btn btn-fill animate-hover-btn"
+          >
+            {locale === "ar" ? "العودة للرئيسية" : "Back to Home"}
+          </a>
+        </div>
+        <Footer1 hasPaddingBottom />
+      </>
+    );
   }
 
   // Localize the main product

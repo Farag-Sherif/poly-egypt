@@ -18,7 +18,7 @@ export default function QuickAdd() {
     isAddedtoCompareItem,
     cartProducts,
     updateQuantity,
-  } = useContextElement();
+  } = useContextElement() || {};
   const [item, setItem] = useState(allProducts[0]);
   useEffect(() => {
     const filtered = allProducts.filter((el) => el.id == quickAddItem);
