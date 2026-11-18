@@ -15,7 +15,6 @@ export default function Products5() {
   } = useQuery({
     queryKey: ["products"],
     queryFn: getBestItems,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   console.log(products);

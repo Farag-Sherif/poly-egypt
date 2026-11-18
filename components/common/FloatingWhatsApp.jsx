@@ -13,7 +13,6 @@ export default function FloatingWhatsApp({
   const { data: phones, isLoading: phoneLoading } = useQuery({
     queryKey: ["phones"],
     queryFn: getPhone,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const phoneNumber = phones?.[0]?.mobile;

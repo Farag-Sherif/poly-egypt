@@ -12,7 +12,7 @@ import { useLocale } from "@/i18n/provider";
 function ProductCard1({
   product: productData,
   gridClass = "",
-  parentClass = "card-product wow fadeInUp cv-grid",
+  parentClass = "card-product wow fadeInUp",
   isNotImageRatio = false,
   radiusClass = "",
 }) {
@@ -172,12 +172,12 @@ function ProductCard1({
 
   return (
     <div
-      className={`${parentClass} ${gridClass} cv-grid ${
+      className={`${parentClass} ${gridClass} ${
         product?.isOnSale ? "on-sale" : ""
       }`}
     >
       <div
-        className={`card-product-wrapper cv-grid ${
+        className={`card-product-wrapper ${
           isNotImageRatio ? "aspect-ratio-0" : ""
         } ${radiusClass} `}
       >

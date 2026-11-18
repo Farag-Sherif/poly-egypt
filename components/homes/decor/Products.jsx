@@ -10,7 +10,6 @@ export default function Products() {
   const { data: products, isLoading } = useQuery({
     queryKey: ["products"],
     queryFn: getBestItems,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Transform API data to match ProductCard1 expected format

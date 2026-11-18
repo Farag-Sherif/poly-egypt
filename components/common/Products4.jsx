@@ -56,7 +56,6 @@ export default function Products4({ parentClass = "" }) {
   } = useQuery({
     queryKey: ["products"],
     queryFn: getBestItems,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Handle loading state

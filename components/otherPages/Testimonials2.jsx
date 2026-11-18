@@ -16,7 +16,6 @@ export default function Testimonials({ parentClass = "flat-spacing" }) {
   } = useQuery({
     queryKey: ["testimonials"],
     queryFn: getTestimonials,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   // Handle loading state

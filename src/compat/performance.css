@@ -1,9 +1,25 @@
-.content-visibility-auto {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 600px;
+/* Prevent horizontal scrollbars globally across all devices and screen sizes */
+html,
+body,
+#root {
+  overflow-x: clip !important;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-.cv-grid {
+/* Ensure grid containers and shop controls stay strictly within viewport bounds */
+.tf-grid-layout,
+.wrapper-shop,
+.card-product-wrapper,
+.tf-shop-control,
+.wrapper-control-shop {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Large sections content-visibility optimization without horizontal layout distortion */
+.content-visibility-auto {
   content-visibility: auto;
-  contain-intrinsic-size: auto 350px;
+  contain-intrinsic-size: 0px 600px;
 }

@@ -356,12 +356,7 @@ export async function fetchApi<T>(
   const method = (options.method || 'GET').toUpperCase();
 
   if (method === 'GET') {
-    const cacheKey = generateCacheKey(endpoint, options);
-    const { signal, ...restOptions } = options;
-    const promise = deduplicateRequest<T>(cacheKey, () =>
-      executeFetchWithRetry<T>(endpoint, { method: 'GET', ...restOptions }, retries)
-    );
-    return attachSignal(promise, signal);
+    return get<T>(endpoint, options);
   }
 
   return executeFetchWithRetry<T>(endpoint, options, retries);

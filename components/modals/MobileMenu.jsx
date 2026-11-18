@@ -29,7 +29,6 @@ export default function MobileMenu() {
   } = useQuery({
     queryKey: ["addresses"],
     queryFn: getAddress,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const {
@@ -39,7 +38,6 @@ export default function MobileMenu() {
   } = useQuery({
     queryKey: ["emails"],
     queryFn: getEmail,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const {
@@ -49,7 +47,6 @@ export default function MobileMenu() {
   } = useQuery({
     queryKey: ["phones"],
     queryFn: getPhone,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const navItems = [

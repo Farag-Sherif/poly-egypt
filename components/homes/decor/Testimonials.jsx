@@ -10,7 +10,6 @@ export default function Testimonials() {
   const { data: testimonials, isLoading } = useQuery({
     queryKey: ["testimonials"],
     queryFn: getTestimonials,
-    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   if (isLoading) {

@@ -4,6 +4,12 @@ import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { getLocalizedHref } from '@/i18n/navigation';
 import { setCurrentLocale } from '@/i18n/server';
 
+// Module-level in-memory cache for dynamic module imports
+const moduleCache = new Map();
+
+// Module-level in-memory cache for rendered pages (persists during SPA session, resets on full refresh)
+const pageCache = new Map();
+
 function isAsyncFunction(fn) {
   if (!fn) return false;
   return (
@@ -39,33 +45,54 @@ export default function PageRenderer({ importer, paramMap = {} }) {
   const params = useMemo(() => buildPageParams(rawParams, paramMap), [rawParams, paramMap]);
   const locale = params.locale || 'en';
 
-  const [renderedContent, setRenderedContent] = useState(null);
-  const [metadata, setMetadata] = useState(null);
+  const pageKey = `${locale}:${location.pathname}${location.search}`;
+  const cachedPage = pageCache.get(pageKey);
+
+  const [renderedContent, setRenderedContent] = useState(() => cachedPage?.content || null);
+  const [metadata, setMetadata] = useState(() => cachedPage?.metadata || null);
   const [redirectTo, setRedirectTo] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !cachedPage);
 
   useEffect(() => {
     let active = true;
+    setCurrentLocale(locale);
+
+    const currentKey = `${locale}:${location.pathname}${location.search}`;
+    const existingCache = pageCache.get(currentKey);
+
+    // If page was already visited and cached, restore instantly without showing loading spinner
+    if (existingCache) {
+      setRenderedContent(existingCache.content);
+      setMetadata(existingCache.metadata);
+      setIsLoading(false);
+      return;
+    }
+
+    // New page: start loading
     setIsLoading(true);
     setRenderedContent(null);
     setMetadata(null);
     setRedirectTo(null);
-    setCurrentLocale(locale);
 
     async function loadPage() {
       try {
-        const mod = await importer();
+        let mod = moduleCache.get(importer);
+        if (!mod) {
+          mod = await importer();
+          moduleCache.set(importer, mod);
+        }
         if (!active) return;
 
         // 1. Process metadata
+        let nextMeta = mod.metadata || null;
         try {
-          const nextMeta = mod.generateMetadata
-            ? await mod.generateMetadata({ params })
-            : mod.metadata || null;
-          if (active) setMetadata(nextMeta || null);
+          if (mod.generateMetadata) {
+            nextMeta = (await mod.generateMetadata({ params })) || mod.metadata || null;
+          }
         } catch {
-          if (active) setMetadata(mod.metadata || null);
+          nextMeta = mod.metadata || null;
         }
+        if (active) setMetadata(nextMeta);
 
         // 2. Render Page component
         const PageComponent = mod.default;
@@ -74,6 +101,7 @@ export default function PageRenderer({ importer, paramMap = {} }) {
           return;
         }
 
+        let contentToRender = null;
         if (isAsyncFunction(PageComponent)) {
           const result = await PageComponent({ params });
           if (!active) return;
@@ -82,9 +110,8 @@ export default function PageRenderer({ importer, paramMap = {} }) {
             setIsLoading(false);
             return;
           }
-          setRenderedContent(result);
+          contentToRender = result;
         } else {
-          // Could be synchronous function or returning a Promise
           try {
             const result = PageComponent({ params });
             if (result && typeof result.then === 'function') {
@@ -95,14 +122,22 @@ export default function PageRenderer({ importer, paramMap = {} }) {
                 setIsLoading(false);
                 return;
               }
-              setRenderedContent(asyncRes);
+              contentToRender = asyncRes;
             } else {
-              setRenderedContent(<PageComponent params={params} />);
+              contentToRender = <PageComponent params={params} />;
             }
           } catch (renderErr) {
             console.error("Error executing page component:", renderErr);
-            setRenderedContent(<PageComponent params={params} />);
+            contentToRender = <PageComponent params={params} />;
           }
+        }
+
+        if (active && contentToRender) {
+          pageCache.set(currentKey, {
+            content: contentToRender,
+            metadata: nextMeta,
+          });
+          setRenderedContent(contentToRender);
         }
       } catch (err) {
         console.error("Failed to load page module:", err);
