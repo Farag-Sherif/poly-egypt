@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperat
 import './OptimizedImage.css';
 
 const MAX_RETRIES = 3; // Initial attempt + 3 retries = 4 total attempts
-const RETRY_DELAYS = [500, 1100, 1900];
+const RETRY_DELAYS = [800, 1600, 2600];
 const DEFAULT_FALLBACK = '/images/placeholder.png';
-const CACHE_NAME = 'polyegy-image-cache-v1';
 
 // Failsafe self-contained inline SVG fallback (used if placeholder file is unreachable or missing)
 const INLINE_FALLBACK_SVG =
@@ -119,22 +118,6 @@ function buildRetryUrl(originalUrl, retryAttempt) {
   }
 }
 
-/**
- * Safe asynchronous caching of successfully loaded images
- */
-async function cacheImage(url) {
-  if (!url || typeof window === 'undefined' || !('caches' in window)) return;
-  if (url.startsWith('data:') || url.startsWith('blob:')) return;
-  try {
-    const cache = await window.caches.open(CACHE_NAME);
-    const existing = await cache.match(url);
-    if (!existing) {
-      await cache.add(new Request(url, { mode: 'no-cors' }));
-    }
-  } catch {
-    // Cache quota or cross-origin restrictions ignored safely
-  }
-}
 
 /**
  * OptimizedImage Component
@@ -321,7 +304,6 @@ const OptimizedImage = forwardRef(function OptimizedImage(
       const clean = getCleanUrl(currentSrc);
       if (clean) {
         loadedImagesCache.add(clean);
-        cacheImage(clean);
       }
 
       if (typeof onLoad === 'function') {
