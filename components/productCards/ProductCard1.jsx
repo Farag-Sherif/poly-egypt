@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useMemo, useCallback } from "react";
 import Image from "@/src/compat/AppImage";
 import Link from "@/i18n/navigation";
 import { useRouter } from "@/i18n/navigation";
@@ -9,22 +9,16 @@ import { getFavorites, updateFavorites } from "@/actions/products";
 import { useUserStore } from "@/store/userStore";
 import { useLocale } from "@/i18n/provider";
 
-export default function ProductCard1({
+function ProductCard1({
   product: productData,
   gridClass = "",
-  parentClass = "card-product wow fadeInUp",
+  parentClass = "card-product wow fadeInUp cv-grid",
   isNotImageRatio = false,
   radiusClass = "",
 }) {
   const locale = useLocale();
-  const [product, setProduct] = useState(productData);
-
-  const [currentImage, setCurrentImage] = useState(productData.imgSrc);
-
-  useEffect(() => {
-    setProduct(productData);
-    setCurrentImage(productData.imgSrc);
-  }, [productData]);
+  const product = productData || {};
+  const currentImage = product.imgSrc;
 
   const queryClient = useQueryClient();
   const { user } = useUserStore();
@@ -95,33 +89,43 @@ export default function ProductCard1({
     };
   };
 
-  // Get calculated prices
-  const { currentPrice, originalPrice, hasDiscount } = calculatePrices(product);
+  // Get calculated prices memoized
+  const { currentPrice, originalPrice, hasDiscount } = useMemo(
+    () => calculatePrices(product),
+    [product?.price, product?.discount, product?.oldPrice]
+  );
 
-  const productDetailUrl = product?.title
-    ? `/product-detail/${product.id}-${encodeURIComponent(product.title)}`
-    : `/product-detail/${product?.id || ""}`;
+  const productDetailUrl = useMemo(
+    () =>
+      product?.title
+        ? `/product-detail/${product.id}-${encodeURIComponent(product.title)}`
+        : `/product-detail/${product?.id || ""}`,
+    [product?.id, product?.title]
+  );
 
   // Helper function to check if product is in favorites
-  const isProductInFavorites = (productId) => {
-    if (!favorites || isLoadingFavorites) return false;
+  const isProductInFavorites = useCallback(
+    (productId) => {
+      if (!favorites || isLoadingFavorites) return false;
 
-    // Check if favorites is an array
-    if (!Array.isArray(favorites)) {
-      console.warn("Favorites data is not an array:", favorites);
-      return false;
-    }
+      // Check if favorites is an array
+      if (!Array.isArray(favorites)) {
+        console.warn("Favorites data is not an array:", favorites);
+        return false;
+      }
 
-    const isInFavorites = favorites.some(
-      (fav) =>
-        fav.id === productId || fav.productId === productId || fav === productId
-    );
+      const isInFavorites = favorites.some(
+        (fav) =>
+          fav.id === productId || fav.productId === productId || fav === productId
+      );
 
-    return isInFavorites;
-  };
+      return isInFavorites;
+    },
+    [favorites, isLoadingFavorites]
+  );
 
   // Handle favorite toggle
-  const handleFavoriteToggle = () => {
+  const handleFavoriteToggle = useCallback(() => {
     // Check if user is authenticated
     if (!user) {
       alert(locale === "ar" ? "يرجى تسجيل الدخول أولاً" : "Please login first");
@@ -129,13 +133,13 @@ export default function ProductCard1({
       return;
     }
 
-    if (!isUpdatingFavorite) {
+    if (!isUpdatingFavorite && product?.id) {
       updateFavorite(product.id);
     }
-  };
+  }, [user, locale, router, isUpdatingFavorite, product?.id, updateFavorite]);
 
   // Handle quick add to cart
-  const handleQuickAddToCart = () => {
+  const handleQuickAddToCart = useCallback(() => {
     // Create a complete product object for the cart
     const productForCart = {
       id: product.id,
@@ -148,10 +152,10 @@ export default function ProductCard1({
     };
 
     addProductToCart(productForCart);
-  };
+  }, [product, currentPrice, originalPrice, hasDiscount, addProductToCart]);
 
   // Handle add to cart - directly add without confirmation
-  const handleAddToCart = () => {
+  const handleAddToCart = useCallback(() => {
     // Create a complete product object for the cart
     const productForCart = {
       id: product.id,
@@ -164,16 +168,16 @@ export default function ProductCard1({
     };
 
     addProductToCart(productForCart);
-  };
+  }, [product, currentPrice, originalPrice, hasDiscount, addProductToCart]);
 
   return (
     <div
-      className={`${parentClass} ${gridClass} ${
+      className={`${parentClass} ${gridClass} cv-grid ${
         product?.isOnSale ? "on-sale" : ""
       }`}
     >
       <div
-        className={`card-product-wrapper ${
+        className={`card-product-wrapper cv-grid ${
           isNotImageRatio ? "aspect-ratio-0" : ""
         } ${radiusClass} `}
       >
@@ -447,3 +451,15 @@ export default function ProductCard1({
     </div>
   );
 }
+
+function arePropsEqual(prevProps, nextProps) {
+  return (
+    prevProps.product?.id === nextProps.product?.id &&
+    prevProps.product?.price === nextProps.product?.price &&
+    prevProps.product?.discount === nextProps.product?.discount &&
+    prevProps.isNotImageRatio === nextProps.isNotImageRatio &&
+    prevProps.gridClass === nextProps.gridClass
+  );
+}
+
+export default React.memo(ProductCard1, arePropsEqual);

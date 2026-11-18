@@ -8,9 +8,9 @@ export default function QueryProvider({ children }) {
         defaultOptions: {
           queries: {
             staleTime: Infinity,
-            gcTime: 24 * 60 * 60 * 1000,
-            refetchOnMount: false,
+            gcTime: 1000 * 60 * 60 * 24,
             refetchOnWindowFocus: false,
+            refetchOnMount: false,
             refetchOnReconnect: false,
           },
         },

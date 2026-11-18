@@ -1,26 +1,153 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { routing } from '@/i18n/routing';
 
-interface FetchOptions extends RequestInit {
+export interface FetchOptions extends RequestInit {
   cache?: RequestCache;
   tags?: string[];
   credentials?: RequestCredentials;
   forceRefresh?: boolean;
+  params?: Record<string, any> | URLSearchParams;
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || "https://admin.poly-egypt.com/api";
+const BASE_URL = import.meta.env?.VITE_API_URL || "https://admin.poly-egypt.com/api";
+
+// In-flight request deduplication map
+export const pendingRequests = new Map<string, Promise<any>>();
 
 // In-memory session cache for GET requests
-const sessionGetCache = new Map<string, Promise<any>>();
+export const sessionGetCache = new Map<string, Promise<any>>();
+
+/**
+ * Deduplicates concurrent in-flight requests for the same key.
+ * If a request for `key` is currently in flight, returns the ongoing Promise.
+ * Otherwise, executes `request()`, caches the Promise in `pendingRequests`,
+ * and deletes the key once settled.
+ */
+export function deduplicateRequest<T>(key: string, request: () => Promise<T>): Promise<T> {
+  const ongoing = pendingRequests.get(key);
+  if (ongoing) {
+    return ongoing as Promise<T>;
+  }
+
+  let promise: Promise<T>;
+  try {
+    promise = request().finally(() => {
+      pendingRequests.delete(key);
+    });
+  } catch (error) {
+    pendingRequests.delete(key);
+    return Promise.reject(error);
+  }
+
+  pendingRequests.set(key, promise);
+  return promise;
+}
+
+/**
+ * Normalizes an endpoint with its query parameters (from URL string and/or options.params)
+ * into a canonical, sorted URL string.
+ */
+export function buildNormalizedUrl(endpoint: string, options?: FetchOptions): string {
+  let path = endpoint;
+  let queryString = '';
+  const qIndex = endpoint.indexOf('?');
+  if (qIndex !== -1) {
+    path = endpoint.substring(0, qIndex);
+    queryString = endpoint.substring(qIndex + 1);
+  }
+
+  const searchParams = new URLSearchParams(queryString);
+
+  if (options?.params) {
+    if (options.params instanceof URLSearchParams) {
+      options.params.forEach((value, key) => {
+        searchParams.set(key, value);
+      });
+    } else if (typeof options.params === 'object' && options.params !== null) {
+      for (const [key, val] of Object.entries(options.params)) {
+        if (val !== undefined && val !== null) {
+          searchParams.set(key, String(val));
+        }
+      }
+    }
+  }
+
+  searchParams.sort();
+  const sortedQuery = searchParams.toString();
+  return sortedQuery ? `${path}?${sortedQuery}` : path;
+}
+
+/**
+ * Uniquely generates a cache/deduplication key reflecting endpoint, parameters, locale, and auth token.
+ */
+export function generateCacheKey(
+  endpoint: string,
+  options?: FetchOptions,
+  locale?: string,
+  token?: string | null
+): string {
+  const currentLocale = locale || getCurrentLocale();
+  const currentToken = token !== undefined ? (token || 'guest') : (getAuthToken() || 'guest');
+  const normalizedUrl = buildNormalizedUrl(endpoint, options);
+  return `locale:${currentLocale}|token:${currentToken}|url:${normalizedUrl}`;
+}
+
+/**
+ * Attaches an AbortSignal to a promise without aborting the underlying shared promise.
+ * If the signal triggers an abort, this individual caller rejects with AbortError,
+ * while the shared underlying request and cache continue uninterrupted.
+ */
+function attachSignal<T>(promise: Promise<T>, signal?: AbortSignal | null): Promise<T> {
+  if (!signal) return promise;
+
+  if (signal.aborted) {
+    const error = signal.reason ?? (
+      typeof DOMException !== 'undefined'
+        ? new DOMException('This operation was aborted', 'AbortError')
+        : new Error('This operation was aborted')
+    );
+    return Promise.reject(error);
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      const error = signal.reason ?? (
+        typeof DOMException !== 'undefined'
+          ? new DOMException('This operation was aborted', 'AbortError')
+          : new Error('This operation was aborted')
+      );
+      reject(error);
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    promise.then(
+      (val) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(val);
+      },
+      (err) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(err);
+      }
+    );
+  });
+}
 
 export function clearApiCache(pattern?: string): void {
   if (!pattern) {
     sessionGetCache.clear();
+    pendingRequests.clear();
     return;
   }
   for (const key of sessionGetCache.keys()) {
     if (key.includes(pattern)) {
       sessionGetCache.delete(key);
+    }
+  }
+  for (const key of pendingRequests.keys()) {
+    if (key.includes(pattern)) {
+      pendingRequests.delete(key);
     }
   }
 }
@@ -99,9 +226,23 @@ export async function invalidateLocaleCache(newLocale: string): Promise<void> {
   clearApiCache();
 }
 
-async function fetchApi<T>(endpoint: string, options: FetchOptions = {}, retries = 2): Promise<T> {
+/**
+ * Underlying network fetcher with retry logic for 5xx server errors and 401 token clearing.
+ */
+async function executeFetchWithRetry<T>(
+  endpoint: string,
+  options: FetchOptions = {},
+  retries = 2
+): Promise<T> {
   const locale = getCurrentLocale();
-  const { cache = 'no-store', tags = [], forceRefresh, ...restOptions } = options;
+  const { cache = 'no-store', tags = [], forceRefresh, params, signal, ...restOptions } = options;
+
+  const normalizedUrl = buildNormalizedUrl(endpoint, options);
+  const cleanBaseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
+  const cleanPath = normalizedUrl.startsWith('/') ? normalizedUrl : `/${normalizedUrl}`;
+  const fullUrl = normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')
+    ? normalizedUrl
+    : `${cleanBaseUrl}${cleanPath}`;
 
   let lastError: any;
 
@@ -138,11 +279,19 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}, retries
       // Force Accept header to stay application/json
       headers.set('Accept', 'application/json');
 
-      const response = await fetch(`${BASE_URL}${endpoint}`, {
+      const fetchInit: RequestInit = {
         ...restOptions,
         cache,
         headers,
-      });
+      };
+
+      // Only pass signal directly for non-GET mutations; GET requests handle AbortSignal non-destructively
+      const method = (restOptions.method || 'GET').toUpperCase();
+      if (method !== 'GET' && signal) {
+        fetchInit.signal = signal;
+      }
+
+      const response = await fetch(fullUrl, fetchInit);
 
       if (!response.ok) {
         if (response.status === 401) {
@@ -181,6 +330,10 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}, retries
       return await response.json();
     } catch (error) {
       lastError = error;
+      // Do not retry aborted requests
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw error;
+      }
       if (attempt < retries) {
         await new Promise((res) => setTimeout(res, 400 * (attempt + 1)));
         continue;
@@ -192,24 +345,51 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}, retries
   throw lastError;
 }
 
-export async function get<T>(endpoint: string, options?: FetchOptions): Promise<T> {
-  const locale = getCurrentLocale();
-  const token = getAuthToken() || 'guest';
-  const cacheKey = `${locale}:${token}:${endpoint}`;
+/**
+ * Fetch with in-flight deduplication for GET requests and automatic retries for 5xx errors.
+ */
+export async function fetchApi<T>(
+  endpoint: string,
+  options: FetchOptions = {},
+  retries = 2
+): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
 
-  if (!options?.forceRefresh && sessionGetCache.has(cacheKey)) {
-    return sessionGetCache.get(cacheKey) as Promise<T>;
+  if (method === 'GET') {
+    const cacheKey = generateCacheKey(endpoint, options);
+    const { signal, ...restOptions } = options;
+    const promise = deduplicateRequest<T>(cacheKey, () =>
+      executeFetchWithRetry<T>(endpoint, { method: 'GET', ...restOptions }, retries)
+    );
+    return attachSignal(promise, signal);
   }
 
-  const promise = fetchApi<T>(endpoint, { method: 'GET', ...options })
-    .catch((error) => {
-      // Remove failed request so it can be retried later
-      sessionGetCache.delete(cacheKey);
-      throw error;
-    });
+  return executeFetchWithRetry<T>(endpoint, options, retries);
+}
+
+/**
+ * Performs a cached GET request.
+ * Shares in-flight requests and caches responses in sessionGetCache during the session.
+ */
+export async function get<T>(endpoint: string, options?: FetchOptions): Promise<T> {
+  const cacheKey = generateCacheKey(endpoint, options);
+
+  if (!options?.forceRefresh && sessionGetCache.has(cacheKey)) {
+    return attachSignal(sessionGetCache.get(cacheKey) as Promise<T>, options?.signal);
+  }
+
+  const { signal, ...restOptions } = options || {};
+
+  const promise = deduplicateRequest<T>(cacheKey, () =>
+    executeFetchWithRetry<T>(endpoint, { method: 'GET', ...restOptions })
+  ).catch((error) => {
+    // Remove failed request from session cache so subsequent attempts can retry
+    sessionGetCache.delete(cacheKey);
+    throw error;
+  });
 
   sessionGetCache.set(cacheKey, promise);
-  return promise;
+  return attachSignal(promise, signal);
 }
 
 export async function post<T>(endpoint: string, data: unknown, options?: FetchOptions): Promise<T> {

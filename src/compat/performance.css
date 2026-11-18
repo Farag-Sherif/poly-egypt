@@ -1,0 +1,9 @@
+.content-visibility-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
+}
+
+.cv-grid {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 350px;
+}
