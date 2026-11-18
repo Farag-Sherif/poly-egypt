@@ -101,20 +101,22 @@ export default function Products1({
 
   // Get pagination info from API response
   const paginationInfo = useMemo(() => {
-    return currentApiResponse
-      ? {
-          currentPage: currentApiResponse.current_page,
-          lastPage: currentApiResponse.last_page,
-          perPage: currentApiResponse.per_page,
-          total: currentApiResponse.total,
-          from: currentApiResponse.from,
-          to: currentApiResponse.to,
-          firstPageUrl: currentApiResponse.first_page_url,
-          lastPageUrl: currentApiResponse.last_page_url,
-          nextPageUrl: currentApiResponse.next_page_url,
-          prevPageUrl: currentApiResponse.prev_page_url,
-        }
-      : null;
+    if (!currentApiResponse) return null;
+    const total = currentApiResponse.total ?? (currentApiResponse.data?.length || 0);
+    const from = currentApiResponse.from ?? (total > 0 ? 1 : 0);
+    const to = currentApiResponse.to ?? (currentApiResponse.data?.length || total);
+    return {
+      currentPage: currentApiResponse.current_page || 1,
+      lastPage: currentApiResponse.last_page || 1,
+      perPage: currentApiResponse.per_page || 10,
+      total,
+      from,
+      to,
+      firstPageUrl: currentApiResponse.first_page_url,
+      lastPageUrl: currentApiResponse.last_page_url,
+      nextPageUrl: currentApiResponse.next_page_url,
+      prevPageUrl: currentApiResponse.prev_page_url,
+    };
   }, [currentApiResponse]);
 
   // Initialize price range based on actual product data

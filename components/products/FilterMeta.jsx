@@ -9,9 +9,9 @@ export default function FilterMeta({
   const locale = useLocale();
   const getResultText = () => {
     if (paginationInfo) {
-      const { from, to, total } = paginationInfo;
+      const { from = 1, to = productLength, total = productLength } = paginationInfo;
       return locale === "ar"
-        ? `معرض ${from}-${to} من ${total} منتجات`
+        ? `عرض ${from}-${to} من ${total} منتجات`
         : `Showing ${from}-${to} of ${total} Products`;
     }
     return locale === "ar"

@@ -29,9 +29,15 @@ export function useLocale() {
 export function useTranslations(namespace) {
   const { messages } = useContext(I18nContext);
   return useCallback(
-    (key) => {
+    (key, values) => {
       const fullKey = namespace ? `${namespace}.${key}` : key;
-      return getValueByPath(messages, fullKey) ?? key;
+      let text = getValueByPath(messages, fullKey) ?? key;
+      if (typeof text === 'string' && values && typeof values === 'object') {
+        Object.entries(values).forEach(([placeholder, val]) => {
+          text = text.replace(new RegExp(`\\{${placeholder}\\}`, 'g'), val !== undefined && val !== null ? String(val) : '');
+        });
+      }
+      return text;
     },
     [messages, namespace]
   );
