@@ -1,79 +1,70 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import './OptimizedImage.css';
 
-const MAX_RETRIES = 2; // Max 2 retries (Attempt 1: immediate, Retry 1: ~700ms, Retry 2: ~1800ms)
-const RETRY_1_DELAY = 700;
-const RETRY_2_DELAY = 1800;
+const MAX_RETRIES = 3; // Initial attempt + 3 retries = 4 total attempts
+const RETRY_DELAYS = [500, 1100, 1900];
 const DEFAULT_FALLBACK = '/images/placeholder.png';
-const FAILED_URLS_KEY = 'polyegy_failed_images_v1';
+const CACHE_NAME = 'polyegy-image-cache-v1';
 
 // Failsafe self-contained inline SVG fallback (used if placeholder file is unreachable or missing)
 const INLINE_FALLBACK_SVG =
   "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400' width='100%25' height='100%25'%3E%3Crect width='400' height='400' fill='%23f8f9fa'/%3E%3Cg fill='none' stroke='%23adb5bd' stroke-width='4' stroke-linecap='round' stroke-linejoin='round' transform='translate(150, 140)'%3E%3Crect x='0' y='0' width='100' height='80' rx='8' ry='8' fill='%23ffffff' fill-opacity='0.6'/%3E%3Ccircle cx='35' cy='30' r='10'/%3E%3Cpath d='M10 70 L40 40 L65 60 L75 50 L90 70 Z'/%3E%3C/g%3E%3Ctext x='200' y='260' text-anchor='middle' fill='%236c757d' font-family='sans-serif' font-size='15' font-weight='500'%3EPolyEgy%3C/text%3E%3C/svg%3E";
 
-// Module-level in-memory cache of definitively failed image URLs
-const failedImageUrls = new Set();
+// Fast in-memory cache of successfully loaded URLs to eliminate skeleton flashes during navigation
+const loadedImagesCache = new Set();
 
-// Safely hydrate failed image URLs from sessionStorage on client
+// Clear any toxic permanent blacklists from previous sessions
 if (typeof window !== 'undefined') {
   try {
-    const raw = window.sessionStorage?.getItem(FAILED_URLS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        parsed.forEach((url) => {
-          if (typeof url === 'string') failedImageUrls.add(url);
-        });
-      }
-    }
+    window.sessionStorage?.removeItem('polyegy_failed_images_v1');
+    window.sessionStorage?.removeItem('polyegy_failed_images');
   } catch {
-    // Ignore sessionStorage quota or access errors
+    // Ignore storage errors
   }
 }
 
 /**
- * Records a URL as definitively failed across memory and sessionStorage
+ * Normalizes any incoming src prop and fixes backend redirect/ORB issues:
+ * - Handles strings, imported image objects, null, undefined
+ * - Ensures HTTPS on admin.poly-egypt.com
+ * - Bypasses Laravel 302 redirection (which triggers Chromium net::ERR_BLOCKED_BY_ORB)
+ *   by rewriting admin.poly-egypt.com/images/... to admin.poly-egypt.com/ar/images/...
  */
-function recordPermanentFailure(url) {
-  if (!url || typeof url !== 'string' || url.startsWith('data:') || url.startsWith('blob:')) return;
-  failedImageUrls.add(url);
-  try {
-    if (typeof window !== 'undefined' && window.sessionStorage) {
-      const list = Array.from(failedImageUrls).slice(-200); // Bound storage to latest 200 items
-      window.sessionStorage.setItem(FAILED_URLS_KEY, JSON.stringify(list));
-    }
-  } catch {
-    // Ignore storage quota errors
-  }
-}
-
-/**
- * Checks if a URL is already marked as a definitive failure
- */
-function isKnownFailure(url) {
-  if (!url || typeof url !== 'string') return false;
-  return failedImageUrls.has(url);
-}
-
-/**
- * Normalizes any incoming src prop (string, imported object, null, undefined)
- */
-function normalizeSrc(src) {
+export function normalizeSrc(src) {
   if (!src) return '';
-  if (typeof src === 'string') return src.trim();
-  if (typeof src === 'object') {
-    if (typeof src.src === 'string') return src.src.trim();
-    if (typeof src.default === 'string') return src.default.trim();
-    if (src.default && typeof src.default.src === 'string') return src.default.src.trim();
+  let str = '';
+  if (typeof src === 'string') {
+    str = src.trim();
+  } else if (typeof src === 'object') {
+    if (typeof src.src === 'string') str = src.src.trim();
+    else if (typeof src.default === 'string') str = src.default.trim();
+    else if (src.default && typeof src.default.src === 'string') str = src.default.src.trim();
+  } else {
+    str = String(src).trim();
   }
-  return String(src).trim();
+
+  if (!str) return '';
+
+  // Ensure HTTPS for admin domain
+  if (str.startsWith('http://admin.poly-egypt.com')) {
+    str = str.replace('http://', 'https://');
+  }
+
+  // Bypass Hostinger/Laravel 302 redirect by ensuring /ar/ prefix
+  // admin.poly-egypt.com/images/... -> admin.poly-egypt.com/ar/images/...
+  // Directly returns 200 OK with image binary, avoiding HTML 302 body and Chromium ORB blocking
+  if (str.includes('admin.poly-egypt.com/images/')) {
+    str = str.replace('admin.poly-egypt.com/images/', 'admin.poly-egypt.com/ar/images/');
+  }
+
+  return str;
 }
 
 /**
  * Removes retry-specific query params (_retry, _t) to obtain the canonical clean URL.
  * Preserves all application query parameters to maintain browser HTTP caching.
  */
-function getCleanUrl(url) {
+export function getCleanUrl(url) {
   if (!url || typeof url !== 'string') return '';
   if (url.startsWith('data:') || url.startsWith('blob:')) return url;
   try {
@@ -92,14 +83,30 @@ function getCleanUrl(url) {
 }
 
 /**
- * Builds a retry URL ONLY during retry attempts.
- * Preserves original params while appending attempt count and timestamp.
+ * Smart retry URL generator:
+ * - Retry 1: Switches locale route (/ar/images/ <-> /en/images/)
+ * - Retry 2: Applies fresh timestamp parameter
+ * - Retry 3: Final backoff with new timestamp
  */
 function buildRetryUrl(originalUrl, retryAttempt) {
   if (!originalUrl || typeof originalUrl !== 'string') return '';
   if (originalUrl.startsWith('data:') || originalUrl.startsWith('blob:')) return originalUrl;
+
+  const clean = getCleanUrl(originalUrl);
+
+  // Attempt 1: Alternate route
+  if (retryAttempt === 1) {
+    if (clean.includes('/ar/images/')) {
+      return clean.replace('/ar/images/', '/en/images/');
+    }
+    if (clean.includes('/en/images/')) {
+      return clean.replace('/en/images/', '/ar/images/');
+    }
+  }
+
+  // Attempts 2 & 3: Timestamp cache buster
   try {
-    const [withoutHash, hash] = originalUrl.split('#');
+    const [withoutHash, hash] = clean.split('#');
     const [baseUrl, query] = withoutHash.split('?');
     const params = new URLSearchParams(query || '');
     params.set('_retry', String(retryAttempt));
@@ -107,8 +114,25 @@ function buildRetryUrl(originalUrl, retryAttempt) {
     const result = `${baseUrl}?${params.toString()}`;
     return hash !== undefined ? `${result}#${hash}` : result;
   } catch {
-    const sep = originalUrl.includes('?') ? '&' : '?';
-    return `${originalUrl}${sep}_retry=${retryAttempt}&_t=${Date.now()}`;
+    const sep = clean.includes('?') ? '&' : '?';
+    return `${clean}${sep}_retry=${retryAttempt}&_t=${Date.now()}`;
+  }
+}
+
+/**
+ * Safe asynchronous caching of successfully loaded images
+ */
+async function cacheImage(url) {
+  if (!url || typeof window === 'undefined' || !('caches' in window)) return;
+  if (url.startsWith('data:') || url.startsWith('blob:')) return;
+  try {
+    const cache = await window.caches.open(CACHE_NAME);
+    const existing = await cache.match(url);
+    if (!existing) {
+      await cache.add(new Request(url, { mode: 'no-cors' }));
+    }
+  } catch {
+    // Cache quota or cross-origin restrictions ignored safely
   }
 }
 
@@ -116,14 +140,13 @@ function buildRetryUrl(originalUrl, retryAttempt) {
  * OptimizedImage Component
  *
  * Provides:
- * - Native lazy loading & priority hints (`fetchPriority`)
+ * - Native lazy loading & priority hints
  * - Async image decoding
- * - Cumulative Layout Shift (CLS) prevention via aspect ratio styling and dimension attributes
- * - Smooth fade-in and skeleton placeholder (`loading` vs `loaded` class)
- * - Exponential backoff jittered retry policy (Max 2 retries)
- * - Definitively failed URL prevention (memory + sessionStorage)
- * - Cascading fallback (/images/placeholder.png -> inline SVG)
- * - Full browser HTTP cache preservation (zero query params on successful/initial loads)
+ * - CLS prevention via aspect-ratio styling
+ * - Smooth skeleton shimmer & fade-in
+ * - 4-Tier Smart Retry with route alternation and exponential backoff
+ * - In-memory and CacheStorage caching
+ * - Instant fallback protection
  */
 const OptimizedImage = forwardRef(function OptimizedImage(
   {
@@ -163,15 +186,15 @@ const OptimizedImage = forwardRef(function OptimizedImage(
   // Determine initial state
   const getInitialSrc = () => {
     if (!normalizedSrc) return targetFallback;
-    if (isKnownFailure(normalizedSrc)) return targetFallback;
-    // DO NOT append query parameters on initial loads!
     return normalizedSrc;
   };
 
   const [currentSrc, setCurrentSrc] = useState(getInitialSrc);
   const [retryCount, setRetryCount] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isFallback, setIsFallback] = useState(() => !normalizedSrc || isKnownFailure(normalizedSrc));
+  const [isLoaded, setIsLoaded] = useState(() => {
+    return Boolean(normalizedSrc && loadedImagesCache.has(getCleanUrl(normalizedSrc)));
+  });
+  const [isFallback, setIsFallback] = useState(() => !normalizedSrc);
 
   const localRef = useRef(null);
   const isMountedRef = useRef(true);
@@ -180,12 +203,12 @@ const OptimizedImage = forwardRef(function OptimizedImage(
 
   useImperativeHandle(forwardedRef, () => localRef.current);
 
-  // Synchronize ref for immediate access inside async callbacks
+  // Synchronize fallback ref
   useEffect(() => {
     isFallbackRef.current = isFallback;
   }, [isFallback]);
 
-  // Synchronize state when src or fallbackSrc changes
+  // Synchronize state when src prop changes
   useEffect(() => {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
@@ -203,20 +226,11 @@ const OptimizedImage = forwardRef(function OptimizedImage(
       return;
     }
 
-    if (isKnownFailure(clean)) {
-      setCurrentSrc(targetFallback);
-      setIsFallback(true);
-      isFallbackRef.current = true;
-      setIsLoaded(true);
-      setRetryCount(0);
-      return;
-    }
-
-    // New valid source
+    const isAlreadyCached = loadedImagesCache.has(getCleanUrl(clean));
     setCurrentSrc(clean);
     setIsFallback(false);
     isFallbackRef.current = false;
-    setIsLoaded(false);
+    setIsLoaded(isAlreadyCached);
     setRetryCount(0);
   }, [src, targetFallback]);
 
@@ -224,9 +238,11 @@ const OptimizedImage = forwardRef(function OptimizedImage(
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Check if image was already cached by browser
+    // Check if image was already cached by browser DOM
     if (localRef.current && localRef.current.complete && localRef.current.naturalWidth > 0) {
       setIsLoaded(true);
+      const clean = getCleanUrl(currentSrc);
+      if (clean) loadedImagesCache.add(clean);
     }
 
     return () => {
@@ -242,7 +258,6 @@ const OptimizedImage = forwardRef(function OptimizedImage(
     (e) => {
       // 1. If we are already displaying a fallback
       if (isFallbackRef.current || currentSrc === targetFallback || currentSrc === INLINE_FALLBACK_SVG) {
-        // If external placeholder failed, fallback to the inline SVG failsafe
         if (currentSrc !== INLINE_FALLBACK_SVG) {
           setCurrentSrc(INLINE_FALLBACK_SVG);
           setIsFallback(true);
@@ -257,23 +272,11 @@ const OptimizedImage = forwardRef(function OptimizedImage(
 
       const clean = getCleanUrl(currentSrc) || normalizedSrc;
 
-      // Check if URL was already marked as definitive failure in another component
-      if (isKnownFailure(clean)) {
-        setIsFallback(true);
-        isFallbackRef.current = true;
-        setCurrentSrc(targetFallback);
-        setIsLoaded(true);
-        if (typeof onError === 'function') onError(e);
-        return;
-      }
-
-      // 2. Smart Retry Mechanism: Max 2 retries
+      // 2. Smart Retry Mechanism: Max 3 retries (Total 4 attempts)
       if (retryCount < MAX_RETRIES) {
         const nextRetry = retryCount + 1;
-        // Retry 1: ~700ms + random jitter (0-200ms)
-        // Retry 2: ~1800ms + random jitter (0-300ms)
-        const baseDelay = nextRetry === 1 ? RETRY_1_DELAY : RETRY_2_DELAY;
-        const jitter = Math.floor(Math.random() * (nextRetry === 1 ? 200 : 300));
+        const baseDelay = RETRY_DELAYS[nextRetry - 1] || 1500;
+        const jitter = Math.floor(Math.random() * 250);
         const delay = baseDelay + jitter;
 
         if (retryTimerRef.current) {
@@ -282,7 +285,6 @@ const OptimizedImage = forwardRef(function OptimizedImage(
 
         retryTimerRef.current = setTimeout(() => {
           if (!isMountedRef.current) return;
-          // Apply cache-busting query param ONLY on retry attempts
           const retryUrl = buildRetryUrl(clean || normalizedSrc, nextRetry);
           setRetryCount(nextRetry);
           setCurrentSrc(retryUrl);
@@ -294,10 +296,7 @@ const OptimizedImage = forwardRef(function OptimizedImage(
         return;
       }
 
-      // 3. Retries exhausted (>= MAX_RETRIES): Record definitive failure
-      if (clean) {
-        recordPermanentFailure(clean);
-      }
+      // 3. Retries exhausted (>= MAX_RETRIES): Switch to fallback
       setIsFallback(true);
       isFallbackRef.current = true;
       setCurrentSrc(targetFallback);
@@ -313,25 +312,29 @@ const OptimizedImage = forwardRef(function OptimizedImage(
   // Load Handler
   const handleLoad = useCallback(
     (e) => {
-      // Clear any pending retry timers
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
 
       setIsLoaded(true);
+      const clean = getCleanUrl(currentSrc);
+      if (clean) {
+        loadedImagesCache.add(clean);
+        cacheImage(clean);
+      }
 
       if (typeof onLoad === 'function') {
         onLoad(e);
       }
     },
-    [onLoad]
+    [currentSrc, onLoad]
   );
 
   // Aspect ratio calculation to prevent Cumulative Layout Shift (CLS)
   const computedStyle = { ...style };
 
-  // Resolve dimensions from props or imported image objects
+  // Resolve dimensions
   const resolvedWidth = width !== undefined ? width : (typeof src === 'object' ? src?.width : undefined);
   const resolvedHeight = height !== undefined ? height : (typeof src === 'object' ? src?.height : undefined);
 
@@ -345,7 +348,6 @@ const OptimizedImage = forwardRef(function OptimizedImage(
       computedStyle.objectPosition = objectPosition;
     }
   } else {
-    // If not fill, prevent CLS by defining aspect ratio
     if (aspectRatio) {
       computedStyle.aspectRatio = computedStyle.aspectRatio || aspectRatio;
     } else if (resolvedWidth && resolvedHeight && !computedStyle.aspectRatio) {
@@ -398,7 +400,6 @@ const OptimizedImage = forwardRef(function OptimizedImage(
       style={computedStyle}
       loading={computedLoading}
       decoding={computedDecoding}
-      fetchPriority={priorityHint}
       fetchpriority={priorityHint}
       sizes={sizes}
       onClick={onClick}

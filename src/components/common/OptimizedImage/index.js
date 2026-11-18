@@ -1,2 +1,2 @@
 export { default } from './OptimizedImage';
-export { default as OptimizedImage } from './OptimizedImage';
+export { default as OptimizedImage, normalizeSrc, getCleanUrl } from './OptimizedImage';

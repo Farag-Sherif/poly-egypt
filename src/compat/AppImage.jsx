@@ -1,5 +1,5 @@
 import React, { forwardRef } from 'react';
-import OptimizedImage from '@/src/components/common/OptimizedImage';
+import OptimizedImage, { normalizeSrc, getCleanUrl } from '@/src/components/common/OptimizedImage';
 
 /**
  * AppImage - Next.js Image compatibility layer
@@ -16,4 +16,4 @@ const AppImage = forwardRef(function AppImage(props, ref) {
 AppImage.displayName = 'AppImage';
 
 export default AppImage;
-export { OptimizedImage };
+export { OptimizedImage, normalizeSrc, getCleanUrl };
