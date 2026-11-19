@@ -112,24 +112,7 @@ export default function PageRenderer({ importer, paramMap = {} }) {
           }
           contentToRender = result;
         } else {
-          try {
-            const result = PageComponent({ params });
-            if (result && typeof result.then === 'function') {
-              const asyncRes = await result;
-              if (!active) return;
-              if (asyncRes && asyncRes.__redirect) {
-                setRedirectTo(asyncRes.__redirect);
-                setIsLoading(false);
-                return;
-              }
-              contentToRender = asyncRes;
-            } else {
-              contentToRender = <PageComponent params={params} />;
-            }
-          } catch (renderErr) {
-            console.error("Error executing page component:", renderErr);
-            contentToRender = <PageComponent params={params} />;
-          }
+          contentToRender = <PageComponent params={params} />;
         }
 
         if (active && contentToRender) {
