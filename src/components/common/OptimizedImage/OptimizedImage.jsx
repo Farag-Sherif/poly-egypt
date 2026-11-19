@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import './OptimizedImage.css';
 
-const MAX_RETRIES = 3; // Initial attempt + 3 retries = 4 total attempts
+const MAX_RETRIES = 3; // Initial attempt (0) + 3 retries = 4 total attempts
 const RETRY_DELAYS = [800, 1600, 2600];
 const DEFAULT_FALLBACK = '/images/placeholder.png';
 
 // Failsafe self-contained inline SVG fallback (used if placeholder file is unreachable or missing)
 const INLINE_FALLBACK_SVG =
   "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400' width='100%25' height='100%25'%3E%3Crect width='400' height='400' fill='%23f8f9fa'/%3E%3Cg fill='none' stroke='%23adb5bd' stroke-width='4' stroke-linecap='round' stroke-linejoin='round' transform='translate(150, 140)'%3E%3Crect x='0' y='0' width='100' height='80' rx='8' ry='8' fill='%23ffffff' fill-opacity='0.6'/%3E%3Ccircle cx='35' cy='30' r='10'/%3E%3Cpath d='M10 70 L40 40 L65 60 L75 50 L90 70 Z'/%3E%3C/g%3E%3Ctext x='200' y='260' text-anchor='middle' fill='%236c757d' font-family='sans-serif' font-size='15' font-weight='500'%3EPolyEgy%3C/text%3E%3C/svg%3E";
+
+// Completely transparent 1x1 SVG data URI
+// Rendered in the DOM <img> while loading/retrying so the browser treats it as a valid image.
+// This completely prevents the browser's native broken image icon and alt text from ever flashing,
+// keeping the skeleton shimmer placeholder 100% undisturbed until either success or complete exhaustion.
+const TRANSPARENT_PIXEL =
+  "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E";
 
 // Fast in-memory cache of successfully loaded URLs to eliminate skeleton flashes during navigation
 const loadedImagesCache = new Set();
@@ -118,18 +125,16 @@ function buildRetryUrl(originalUrl, retryAttempt) {
   }
 }
 
-
 /**
  * OptimizedImage Component
  *
  * Provides:
- * - Native lazy loading & priority hints
- * - Async image decoding
- * - CLS prevention via aspect-ratio styling
- * - Smooth skeleton shimmer & fade-in
- * - 4-Tier Smart Retry with route alternation and exponential backoff
+ * - Seamless background image preloading and smart retries
+ * - Total suppression of native broken image icons and alt text during retries
+ * - Clean animated skeleton shimmer placeholder throughout all loading attempts
+ * - Failure fallback ONLY displayed when all attempts (initial + 3 retries) have failed
+ * - IntersectionObserver viewport loading & CLS prevention
  * - In-memory and CacheStorage caching
- * - Instant fallback protection
  */
 const OptimizedImage = forwardRef(function OptimizedImage(
   {
@@ -166,36 +171,165 @@ const OptimizedImage = forwardRef(function OptimizedImage(
   const targetFallback = fallbackSrc || DEFAULT_FALLBACK;
   const isFill = Boolean(fill || layout === 'fill');
 
-  // Determine initial state
-  const getInitialSrc = () => {
-    if (!normalizedSrc) return targetFallback;
-    return normalizedSrc;
-  };
+  // Check if image is immediately available (cache, data URI, blob)
+  const isImmediatelyReady = Boolean(
+    normalizedSrc &&
+      (normalizedSrc.startsWith('data:') ||
+        normalizedSrc.startsWith('blob:') ||
+        loadedImagesCache.has(getCleanUrl(normalizedSrc)))
+  );
 
-  const [currentSrc, setCurrentSrc] = useState(getInitialSrc);
-  const [retryCount, setRetryCount] = useState(0);
-  const [isLoaded, setIsLoaded] = useState(() => {
-    return Boolean(normalizedSrc && loadedImagesCache.has(getCleanUrl(normalizedSrc)));
+  const [currentSrc, setCurrentSrc] = useState(() => {
+    if (!normalizedSrc) return targetFallback;
+    if (isImmediatelyReady) return normalizedSrc;
+    return TRANSPARENT_PIXEL;
   });
+
+  const [isLoaded, setIsLoaded] = useState(() => {
+    if (!normalizedSrc) return true;
+    return isImmediatelyReady;
+  });
+
   const [isFallback, setIsFallback] = useState(() => !normalizedSrc);
+  const [isInView, setIsInView] = useState(() => priority || typeof window === 'undefined');
 
   const localRef = useRef(null);
   const isMountedRef = useRef(true);
   const retryTimerRef = useRef(null);
+  const activePreloaderRef = useRef(null);
   const isFallbackRef = useRef(isFallback);
 
   useImperativeHandle(forwardedRef, () => localRef.current);
 
-  // Synchronize fallback ref
   useEffect(() => {
     isFallbackRef.current = isFallback;
   }, [isFallback]);
 
+  // Viewport intersection observer for non-priority images
+  useEffect(() => {
+    if (isInView || priority || typeof window === 'undefined') return;
+
+    if (!('IntersectionObserver' in window)) {
+      setIsInView(true);
+      return;
+    }
+
+    const node = localRef.current;
+    if (!node) {
+      setIsInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting || entry.intersectionRatio > 0) {
+            setIsInView(true);
+            observer.disconnect();
+            break;
+          }
+        }
+      },
+      { rootMargin: '350px 0px' }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [isInView, priority]);
+
+  // Background loader with resilient 4-stage smart retry
+  const startBackgroundLoad = useCallback(
+    (cleanUrl, targetNormalizedSrc) => {
+      // Clear any pending timers or loaders
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+      if (activePreloaderRef.current) {
+        activePreloaderRef.current.onload = null;
+        activePreloaderRef.current.onerror = null;
+        activePreloaderRef.current = null;
+      }
+
+      const executeAttempt = (urlToTry, attemptNumber) => {
+        if (!isMountedRef.current) return;
+
+        const preloader = new window.Image();
+        activePreloaderRef.current = preloader;
+        preloader.decoding = 'async';
+
+        preloader.onload = (e) => {
+          if (!isMountedRef.current) return;
+          activePreloaderRef.current = null;
+
+          const clean = getCleanUrl(urlToTry);
+          if (clean) loadedImagesCache.add(clean);
+
+          setCurrentSrc(urlToTry);
+          setIsLoaded(true);
+          setIsFallback(false);
+          isFallbackRef.current = false;
+
+          if (typeof onLoad === 'function') {
+            onLoad(e);
+          }
+        };
+
+        preloader.onerror = (e) => {
+          if (!isMountedRef.current) return;
+          activePreloaderRef.current = null;
+
+          // Smart retry: Attempts 1, 2, 3
+          if (attemptNumber < MAX_RETRIES) {
+            const nextAttempt = attemptNumber + 1;
+            const baseDelay = RETRY_DELAYS[nextAttempt - 1] || 1500;
+            const jitter = Math.floor(Math.random() * 200);
+            const delay = baseDelay + jitter;
+
+            retryTimerRef.current = setTimeout(() => {
+              if (!isMountedRef.current) return;
+              const nextUrl = buildRetryUrl(cleanUrl || targetNormalizedSrc, nextAttempt);
+              executeAttempt(nextUrl, nextAttempt);
+            }, delay);
+            return;
+          }
+
+          // All attempts (0 + 3 retries = 4 attempts) definitively failed!
+          // NOW AND ONLY NOW: Show the fallback image / failure icon
+          setIsFallback(true);
+          isFallbackRef.current = true;
+          setCurrentSrc(targetFallback);
+          setIsLoaded(true);
+
+          if (typeof onError === 'function') {
+            onError(e);
+          }
+        };
+
+        preloader.src = urlToTry;
+      };
+
+      // Start initial attempt (attempt 0)
+      executeAttempt(cleanUrl || targetNormalizedSrc, 0);
+    },
+    [targetFallback, onLoad, onError]
+  );
+
   // Synchronize state when src prop changes
   useEffect(() => {
+    isMountedRef.current = true;
+
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
+    }
+    if (activePreloaderRef.current) {
+      activePreloaderRef.current.onload = null;
+      activePreloaderRef.current.onerror = null;
+      activePreloaderRef.current = null;
     }
 
     const clean = normalizeSrc(src);
@@ -205,109 +339,70 @@ const OptimizedImage = forwardRef(function OptimizedImage(
       setIsFallback(true);
       isFallbackRef.current = true;
       setIsLoaded(true);
-      setRetryCount(0);
       return;
     }
 
-    const isAlreadyCached = loadedImagesCache.has(getCleanUrl(clean));
-    setCurrentSrc(clean);
-    setIsFallback(false);
-    isFallbackRef.current = false;
-    setIsLoaded(isAlreadyCached);
-    setRetryCount(0);
-  }, [src, targetFallback]);
+    const alreadyCached =
+      clean.startsWith('data:') ||
+      clean.startsWith('blob:') ||
+      loadedImagesCache.has(getCleanUrl(clean));
 
-  // Component mount & unmount lifecycle
-  useEffect(() => {
-    isMountedRef.current = true;
-
-    // Check if image was already cached by browser DOM
-    if (localRef.current && localRef.current.complete && localRef.current.naturalWidth > 0) {
+    if (alreadyCached) {
+      setCurrentSrc(clean);
+      setIsFallback(false);
+      isFallbackRef.current = false;
       setIsLoaded(true);
-      const clean = getCleanUrl(currentSrc);
-      if (clean) loadedImagesCache.add(clean);
+      return;
     }
 
+    // Keep DOM image showing transparent pixel while loading offscreen
+    setCurrentSrc(TRANSPARENT_PIXEL);
+    setIsFallback(false);
+    isFallbackRef.current = false;
+    setIsLoaded(false);
+
+    if (isInView) {
+      startBackgroundLoad(getCleanUrl(clean), clean);
+    }
+  }, [src, isInView, startBackgroundLoad, targetFallback]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
-      }
-    };
-  }, [currentSrc]);
-
-  // Smart Error & Retry Handler
-  const handleError = useCallback(
-    (e) => {
-      // 1. If we are already displaying a fallback
-      if (isFallbackRef.current || currentSrc === targetFallback || currentSrc === INLINE_FALLBACK_SVG) {
-        if (currentSrc !== INLINE_FALLBACK_SVG) {
-          setCurrentSrc(INLINE_FALLBACK_SVG);
-          setIsFallback(true);
-          isFallbackRef.current = true;
-          setIsLoaded(true);
-        }
-        if (typeof onError === 'function') {
-          onError(e);
-        }
-        return;
-      }
-
-      const clean = getCleanUrl(currentSrc) || normalizedSrc;
-
-      // 2. Smart Retry Mechanism: Max 3 retries (Total 4 attempts)
-      if (retryCount < MAX_RETRIES) {
-        const nextRetry = retryCount + 1;
-        const baseDelay = RETRY_DELAYS[nextRetry - 1] || 1500;
-        const jitter = Math.floor(Math.random() * 250);
-        const delay = baseDelay + jitter;
-
-        if (retryTimerRef.current) {
-          clearTimeout(retryTimerRef.current);
-        }
-
-        retryTimerRef.current = setTimeout(() => {
-          if (!isMountedRef.current) return;
-          const retryUrl = buildRetryUrl(clean || normalizedSrc, nextRetry);
-          setRetryCount(nextRetry);
-          setCurrentSrc(retryUrl);
-        }, delay);
-
-        if (typeof onError === 'function') {
-          onError(e);
-        }
-        return;
-      }
-
-      // 3. Retries exhausted (>= MAX_RETRIES): Switch to fallback
-      setIsFallback(true);
-      isFallbackRef.current = true;
-      setCurrentSrc(targetFallback);
-      setIsLoaded(true);
-
-      if (typeof onError === 'function') {
-        onError(e);
-      }
-    },
-    [currentSrc, normalizedSrc, retryCount, targetFallback, onError]
-  );
-
-  // Load Handler
-  const handleLoad = useCallback(
-    (e) => {
-      if (retryTimerRef.current) {
-        clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
-
-      setIsLoaded(true);
-      const clean = getCleanUrl(currentSrc);
-      if (clean) {
-        loadedImagesCache.add(clean);
+      if (activePreloaderRef.current) {
+        activePreloaderRef.current.onload = null;
+        activePreloaderRef.current.onerror = null;
+        activePreloaderRef.current = null;
       }
+    };
+  }, []);
 
-      if (typeof onLoad === 'function') {
-        onLoad(e);
+  // DOM fallback protection (in case targetFallback itself 404s)
+  const handleDomError = useCallback(() => {
+    if (currentSrc !== INLINE_FALLBACK_SVG) {
+      setCurrentSrc(INLINE_FALLBACK_SVG);
+      setIsFallback(true);
+      isFallbackRef.current = true;
+      setIsLoaded(true);
+    }
+  }, [currentSrc]);
+
+  // DOM load handler
+  const handleDomLoad = useCallback(
+    (e) => {
+      if (currentSrc && currentSrc !== TRANSPARENT_PIXEL) {
+        setIsLoaded(true);
+        const clean = getCleanUrl(currentSrc);
+        if (clean) loadedImagesCache.add(clean);
+        if (typeof onLoad === 'function') {
+          onLoad(e);
+        }
       }
     },
     [currentSrc, onLoad]
@@ -315,8 +410,6 @@ const OptimizedImage = forwardRef(function OptimizedImage(
 
   // Aspect ratio calculation to prevent Cumulative Layout Shift (CLS)
   const computedStyle = { ...style };
-
-  // Resolve dimensions
   const resolvedWidth = width !== undefined ? width : (typeof src === 'object' ? src?.width : undefined);
   const resolvedHeight = height !== undefined ? height : (typeof src === 'object' ? src?.height : undefined);
 
@@ -385,8 +478,8 @@ const OptimizedImage = forwardRef(function OptimizedImage(
       fetchpriority={priorityHint}
       sizes={sizes}
       onClick={onClick}
-      onLoad={handleLoad}
-      onError={handleError}
+      onLoad={handleDomLoad}
+      onError={handleDomError}
       {...rest}
     />
   );
