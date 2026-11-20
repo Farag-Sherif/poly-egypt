@@ -222,11 +222,17 @@ export default function Details1({ product, locale = "en" }) {
     const usdStr = `$${usdVal.toFixed(2)} USD`;
 
     return (
-      <span className="dual-price-display">
+      <span className="dual-price-display d-inline-flex align-items-baseline gap-2">
         <span className="fw-6 text-primary">{egpStr}</span>{" "}
         <span
+          dir="ltr"
           className="text-secondary"
-          style={{ fontSize: "0.85em", fontWeight: "normal", marginInlineStart: "4px" }}
+          style={{
+            fontSize: "0.85em",
+            fontWeight: "normal",
+            unicodeBidi: "isolate",
+            display: "inline-block",
+          }}
         >
           ({usdStr})
         </span>
@@ -459,7 +465,7 @@ export default function Details1({ product, locale = "en" }) {
                           </span>
                           {(egpPrice !== 0 || usdPrice !== 0) && (
                             <span
-                              className="tf-qty-price total-price"
+                              className="tf-qty-price total-price d-inline-flex align-items-center gap-1"
                               style={{ marginInlineStart: "6px" }}
                             >
                               <span>
@@ -467,9 +473,11 @@ export default function Details1({ product, locale = "en" }) {
                                 {(egpFinalPrice * currentQuantity).toFixed(2)}
                               </span>{" "}
                               <span
+                                dir="ltr"
                                 style={{
                                   fontSize: "0.85em",
                                   opacity: 0.9,
+                                  unicodeBidi: "isolate",
                                 }}
                               >
                                 ($
