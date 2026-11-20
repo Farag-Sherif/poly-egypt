@@ -1,5 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { getTranslation, isRTL } from "@/utils/translations";
+import { isRTL } from "@/utils/translations";
+
+const COLOR_NAMES_MAP = {
+  "#c73d3d": { ar: "أحمر", en: "Red" },
+  "#ff0000": { ar: "أحمر", en: "Red" },
+  "#0000ff": { ar: "أزرق", en: "Blue" },
+  "#00ff00": { ar: "أخضر", en: "Green" },
+  "#00ffff": { ar: "سماوي (Cyan)", en: "Cyan" },
+  "#ffffff": { ar: "أبيض ناصع", en: "Cool White" },
+  "#fff3cc": { ar: "أبيض دافئ", en: "Warm White" },
+  "#fff4e0": { ar: "أبيض دافئ", en: "Warm White" },
+  "#fff1d0": { ar: "أبيض دافئ", en: "Warm White" },
+  "#ffeb3b": { ar: "أصفر هادئ", en: "Soft Yellow" },
+  "#ffa500": { ar: "برتقالي", en: "Orange" },
+  "#800080": { ar: "بنفسجي", en: "Purple" },
+  "#ff69b4": { ar: "وردي", en: "Pink" },
+};
 
 export default function ColorSelect({
   activeColor = "",
@@ -40,20 +56,31 @@ export default function ColorSelect({
 
   const currentActiveColor = activeColor || activeColorDefault;
 
+  const getFriendlyColorName = (val) => {
+    if (!val) return "";
+    const lower = String(val).toLowerCase();
+    if (COLOR_NAMES_MAP[lower]) {
+      return COLOR_NAMES_MAP[lower][locale] || COLOR_NAMES_MAP[lower].en;
+    }
+    return val;
+  };
+
   // Don't render if no colors available
   if (!colors || colors.length === 0) {
     return null;
   }
 
+  const activeColorLabel = getFriendlyColorName(currentActiveColor);
+
   return (
     <div className="variant-picker-item" dir={isRtl ? "rtl" : "ltr"}>
       <div className="variant-picker-label mb_12">
-        {getTranslation("colors", locale)}:
+        <span className="fw-6">{locale === "ar" ? "لون الإضاءة:" : "Lighting Color:"}</span>
         <span
-          className="text-title variant-picker-label-value value-currentColor"
+          className="text-title variant-picker-label-value value-currentColor fw-6 text-primary"
           style={{ textTransform: "capitalize", marginInlineStart: "6px" }}
         >
-          {currentActiveColor || getTranslation("selectColor", locale)}
+          {activeColorLabel || (locale === "ar" ? "اختر اللون" : "Select Color")}
         </span>
       </div>
       <div className="variant-picker-values">
@@ -76,8 +103,8 @@ export default function ColorSelect({
               : index;
           const colorLabel =
             typeof colorItem === "object"
-              ? colorItem.name || colorItem.color || colorItem.value || colorValue
-              : colorValue;
+              ? colorItem.name || getFriendlyColorName(colorValue) || colorValue
+              : getFriendlyColorName(colorValue) || colorValue;
 
           const isSelected =
             currentActiveColor &&
@@ -111,6 +138,7 @@ export default function ColorSelect({
                       colorDisplay?.toLowerCase?.() === "white"
                         ? "1px solid #ddd"
                         : "1px solid transparent",
+                    boxShadow: isSelected ? "0 0 0 2px #000" : "none",
                   }}
                 />
                 <span className="tooltip">{colorLabel}</span>

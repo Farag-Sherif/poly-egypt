@@ -64,35 +64,73 @@ function ProductCard1({
   const { setQuickAddItem, addProductToCart, isAddedToCartProducts } =
     useContextElement();
 
-  // Helper function to calculate prices with discount
+  const USD_RATE = 50;
+
+  // Helper function to calculate prices with discount, sizes, and multi-currency
   const calculatePrices = (product) => {
-    if (!product?.discount || !product?.price) {
-      return {
-        currentPrice: product?.price || 0,
-        originalPrice: product?.oldPrice || null,
-        hasDiscount: false,
-      };
+    // Check if product has sizes with prices
+    const sizes = Array.isArray(product?.sizes) ? product.sizes : [];
+    let startingEgpPrice = null;
+    let startingUsdPrice = null;
+    let hasSizePrices = false;
+
+    if (sizes.length > 0) {
+      const validSizePrices = sizes
+        .map((s) => ({
+          egp: Number(s.price) || 0,
+          usd: Number(s.price_usd) || 0,
+        }))
+        .filter((p) => p.egp > 0 || p.usd > 0);
+
+      if (validSizePrices.length > 0) {
+        hasSizePrices = true;
+        validSizePrices.sort((a, b) => {
+          const aPrice = a.egp > 0 ? a.egp : a.usd * USD_RATE;
+          const bPrice = b.egp > 0 ? b.egp : b.usd * USD_RATE;
+          return aPrice - bPrice;
+        });
+        const minSize = validSizePrices[0];
+        startingEgpPrice = minSize.egp > 0 ? minSize.egp : minSize.usd * USD_RATE;
+        startingUsdPrice = minSize.usd > 0 ? minSize.usd : +(minSize.egp / USD_RATE).toFixed(2);
+      }
     }
 
-    const originalPrice = product.price; // product.price is the original price
-    const discountPercent = product.discount;
+    const rawEgp = Number(product?.price) || 0;
+    const rawUsd = Number(product?.price_usd) || 0;
 
-    // Calculate discounted price by subtracting discount percentage from original price
-    // Formula: currentPrice = originalPrice - (originalPrice * discount/100)
-    const currentPrice =
-      originalPrice - (originalPrice * discountPercent) / 100;
+    const baseEgp = startingEgpPrice !== null ? startingEgpPrice : (rawEgp > 0 ? rawEgp : (rawUsd > 0 ? rawUsd * USD_RATE : 0));
+    const baseUsd = startingUsdPrice !== null ? startingUsdPrice : (rawUsd > 0 ? rawUsd : (rawEgp > 0 ? +(rawEgp / USD_RATE).toFixed(2) : 0));
+
+    const discountPercent = Number(product?.discount) || 0;
+    const hasDiscount = discountPercent > 0;
+    const currentEgp = hasDiscount ? baseEgp * (1 - discountPercent / 100) : baseEgp;
+    const currentUsd = hasDiscount ? baseUsd * (1 - discountPercent / 100) : baseUsd;
+    const originalEgp = hasDiscount ? baseEgp : null;
+    const originalUsd = hasDiscount ? baseUsd : null;
 
     return {
-      currentPrice,
-      originalPrice,
-      hasDiscount: true,
+      currentEgp,
+      currentUsd,
+      originalEgp,
+      originalUsd,
+      hasDiscount,
+      hasSizePrices,
+      hasAnyPrice: baseEgp > 0 || baseUsd > 0,
     };
   };
 
   // Get calculated prices memoized
-  const { currentPrice, originalPrice, hasDiscount } = useMemo(
+  const {
+    currentEgp,
+    currentUsd,
+    originalEgp,
+    originalUsd,
+    hasDiscount,
+    hasSizePrices,
+    hasAnyPrice,
+  } = useMemo(
     () => calculatePrices(product),
-    [product?.price, product?.discount, product?.oldPrice]
+    [product?.price, product?.price_usd, product?.discount, product?.sizes]
   );
 
   const productDetailUrl = useMemo(
@@ -144,15 +182,29 @@ function ProductCard1({
     const productForCart = {
       id: product.id,
       title: product.title,
-      imgSrc: product.imgSrc,
-      price: currentPrice,
-      oldPrice: hasDiscount ? originalPrice : null,
+      name: product.title,
+      imgSrc: currentImage,
+      image_path: currentImage,
+      price: currentEgp,
+      originalPrice: originalEgp || currentEgp,
+      dollarPrice: currentUsd,
+      originalDollarPrice: originalUsd || currentUsd,
       weight: product.weight,
+      selectedSize: Array.isArray(product.sizes) && product.sizes.length > 0 ? product.sizes[0]?.size : null,
+      selectedColor: Array.isArray(product.colors) && product.colors.length > 0 ? product.colors[0]?.color : null,
       cartId: `${product.id}`,
     };
 
     addProductToCart(productForCart);
-  }, [product, currentPrice, originalPrice, hasDiscount, addProductToCart]);
+  }, [
+    product,
+    currentImage,
+    currentEgp,
+    originalEgp,
+    currentUsd,
+    originalUsd,
+    addProductToCart,
+  ]);
 
   // Handle add to cart - directly add without confirmation
   const handleAddToCart = useCallback(() => {
@@ -160,15 +212,29 @@ function ProductCard1({
     const productForCart = {
       id: product.id,
       title: product.title,
-      imgSrc: product.imgSrc,
-      price: currentPrice,
-      oldPrice: hasDiscount ? originalPrice : null,
+      name: product.title,
+      imgSrc: currentImage,
+      image_path: currentImage,
+      price: currentEgp,
+      originalPrice: originalEgp || currentEgp,
+      dollarPrice: currentUsd,
+      originalDollarPrice: originalUsd || currentUsd,
       weight: product.weight,
+      selectedSize: Array.isArray(product.sizes) && product.sizes.length > 0 ? product.sizes[0]?.size : null,
+      selectedColor: Array.isArray(product.colors) && product.colors.length > 0 ? product.colors[0]?.color : null,
       cartId: `${product.id}`,
     };
 
     addProductToCart(productForCart);
-  }, [product, currentPrice, originalPrice, hasDiscount, addProductToCart]);
+  }, [
+    product,
+    currentImage,
+    currentEgp,
+    originalEgp,
+    currentUsd,
+    originalUsd,
+    addProductToCart,
+  ]);
 
   return (
     <div
@@ -402,19 +468,54 @@ function ProductCard1({
         <Link href={productDetailUrl} className="title link">
           {product.title}
         </Link>
-        <span className="price">
-          {hasDiscount && originalPrice && product.price !== 0 && (
-            <span className="old-price">
+        <span className="price d-flex flex-wrap align-items-center gap-1">
+          {hasDiscount && originalEgp && (
+            <span
+              className="old-price"
+              style={{
+                textDecoration: "line-through",
+                opacity: 0.65,
+                fontSize: "0.88em",
+                marginInlineEnd: "6px",
+              }}
+            >
               {locale === "ar"
-                ? `ج.م ${originalPrice.toFixed(2)}`
-                : `EGP ${originalPrice.toFixed(2)}`}
+                ? `ج.م ${originalEgp.toFixed(2)}`
+                : `EGP ${originalEgp.toFixed(2)}`}
+              {originalUsd > 0 && (
+                <span className="text-secondary" style={{ fontSize: "0.85em", marginInlineStart: "4px" }}>
+                  (${originalUsd.toFixed(2)})
+                </span>
+              )}
             </span>
-          )}{" "}
-          {product.price !== 0 &&
-            currentPrice !== 0 &&
-            (locale === "ar"
-              ? `ج.م ${currentPrice?.toFixed(2)}`
-              : `EGP ${currentPrice?.toFixed(2)}`)}
+          )}
+          {hasAnyPrice ? (
+            <span className="current-price-group d-inline-flex align-items-center flex-wrap">
+              {hasSizePrices && (
+                <span
+                  className="text-secondary fw-normal"
+                  style={{ fontSize: "0.85em", marginInlineEnd: "4px" }}
+                >
+                  {locale === "ar" ? "يبدأ من " : "From "}
+                </span>
+              )}
+              <span className="fw-6 text-primary">
+                {locale === "ar"
+                  ? `ج.م ${currentEgp.toFixed(2)}`
+                  : `EGP ${currentEgp.toFixed(2)}`}
+              </span>
+              <span
+                className="text-secondary"
+                style={{ fontSize: "0.85em", marginInlineStart: "4px" }}
+              >
+                (${currentUsd.toFixed(2)})
+              </span>
+            </span>
+          ) : (
+            <span className="text-secondary" style={{ fontSize: "0.88em" }}>
+              {locale === "ar" ? "السعر عند الطلب" : "Price on request"}
+            </span>
+          )}
         </span>
         {product?.weight && (
           <div className="product-weight">

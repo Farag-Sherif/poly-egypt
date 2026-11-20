@@ -25,6 +25,9 @@ export default function Products() {
           ? product.media[0].image_path
           : product.image_path,
       price: product.price,
+      price_usd: product.price_usd,
+      sizes: product.sizes || [],
+      colors: product.colors || [],
       discount: product.discount,
       isOnSale: product.discount > 0,
       weight: product.weight,

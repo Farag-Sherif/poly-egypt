@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Slider1 from "../sliders/Slider1";
 import QuantitySelect from "../QuantitySelect";
 import ColorSelect from "../ColorSelect";
+import SizeSelect from "../SizeSelect";
 import Image from "@/src/compat/AppImage";
 import { useContextElement } from "@/context/Context";
 import ProductStikyBottom from "../ProductStikyBottom";
@@ -27,18 +28,86 @@ export default function Details1({ product, locale = "en" }) {
   const router = useRouter();
   const isRtl = isRTL(locale);
 
+  // Parse and normalize available sizes
+  const availableSizes = useMemo(() => {
+    const raw =
+      product?.sizes ||
+      product?.product_sizes ||
+      product?.variations?.filter?.((v) => v.size) ||
+      [];
+    if (Array.isArray(raw)) return raw;
+    return [];
+  }, [product]);
+
+  // Size selection state
+  const [activeSize, setActiveSize] = useState(() => {
+    if (availableSizes && availableSizes.length > 0) {
+      const first = availableSizes[0];
+      return typeof first === "object"
+        ? first.size || first.value || first.name || ""
+        : first;
+    }
+    return "";
+  });
+
+  // Sync active size if sizes change
+  useEffect(() => {
+    if (availableSizes && availableSizes.length > 0) {
+      const currentExists = availableSizes.some((s) => {
+        const val = typeof s === "object" ? s.size || s.value || s.name : s;
+        return val === activeSize;
+      });
+      if (!activeSize || !currentExists) {
+        const first = availableSizes[0];
+        setActiveSize(
+          typeof first === "object"
+            ? first.size || first.value || first.name || ""
+            : first
+        );
+      }
+    }
+  }, [availableSizes]);
+
+  // Find the selected size object to extract custom per-size prices
+  const selectedSizeObj = useMemo(() => {
+    if (!availableSizes || availableSizes.length === 0 || !activeSize) {
+      return null;
+    }
+    return (
+      availableSizes.find((s) => {
+        const val = typeof s === "object" ? s.size || s.value || s.name : s;
+        return val === activeSize;
+      }) || availableSizes[0] || null
+    );
+  }, [availableSizes, activeSize]);
+
   // Parse and normalize available colors
   const availableColors = useMemo(() => {
     const raw =
       product?.colors ||
       product?.product_colors ||
-      product?.variations ||
+      product?.variations?.filter?.((v) => v.color) ||
       product?.color ||
       [];
-    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw) && raw.length > 0) return raw;
     if (typeof raw === "string" && raw.trim()) return [{ color: raw.trim() }];
+
+    // If product is luminous or has sizes, provide standard luminous lighting color options
+    if (
+      product?.category?.name?.includes("Luminous") ||
+      product?.name?.includes("LED") ||
+      product?.name?.includes("Luminous") ||
+      (Array.isArray(product?.sizes) && product.sizes.length > 0)
+    ) {
+      return [
+        { id: 1, name: locale === "ar" ? "أبيض دافئ" : "Warm White", color: "#fff3cc" },
+        { id: 2, name: locale === "ar" ? "أبيض ناصع" : "Cool White", color: "#ffffff" },
+        { id: 3, name: locale === "ar" ? "RGB متعدد الألوان" : "RGB Multi-color", color: "#00ffff" },
+        { id: 4, name: locale === "ar" ? "أصفر هادئ" : "Soft Yellow", color: "#ffeb3b" },
+      ];
+    }
     return [];
-  }, [product]);
+  }, [product, locale]);
 
   // Color selection state
   const [activeColor, setActiveColor] = useState(() => {
@@ -91,7 +160,11 @@ export default function Details1({ product, locale = "en" }) {
   // Currency & Multi-Currency calculation (1 USD ≈ 50 EGP)
   const USD_RATE = 50;
 
-  const rawEgpPrice =
+  // Selected size prices override if present
+  const sizeEgp = Number(selectedSizeObj?.price) || 0;
+  const sizeUsd = Number(selectedSizeObj?.price_usd) || 0;
+
+  const productRawEgp =
     typeof product?.price === "number"
       ? product.price
       : typeof product?.price_egp === "number"
@@ -100,7 +173,7 @@ export default function Details1({ product, locale = "en" }) {
       ? product.egp_price
       : Number(product?.price) || 0;
 
-  const rawUsdPrice =
+  const productRawUsd =
     typeof product?.dollar_price === "number"
       ? product.dollar_price
       : typeof product?.price_dollar === "number"
@@ -118,6 +191,10 @@ export default function Details1({ product, locale = "en" }) {
             product?.price_usd ||
             product?.dollarPrice
         ) || 0;
+
+  // If a size is selected with its own price, use that size's price!
+  const rawEgpPrice = sizeEgp > 0 ? sizeEgp : productRawEgp;
+  const rawUsdPrice = sizeUsd > 0 ? sizeUsd : productRawUsd;
 
   const egpPrice =
     rawEgpPrice > 0
@@ -142,40 +219,27 @@ export default function Details1({ product, locale = "en" }) {
   // Helper to format both prices based on active currency
   const formatDualPrice = (egpVal, usdVal) => {
     const egpStr = `${locale === "ar" ? "ج.م" : "EGP"} ${egpVal.toFixed(2)}`;
-    const usdStr = `$${usdVal.toFixed(2)}`;
-
-    if (currency === "USD") {
-      return (
-        <>
-          <span>{usdStr}</span>{" "}
-          <span
-            className="text-secondary"
-            style={{ fontSize: "0.85em", fontWeight: "normal" }}
-          >
-            ({egpStr})
-          </span>
-        </>
-      );
-    }
+    const usdStr = `$${usdVal.toFixed(2)} USD`;
 
     return (
-      <>
-        <span>{egpStr}</span>{" "}
+      <span className="dual-price-display">
+        <span className="fw-6 text-primary">{egpStr}</span>{" "}
         <span
           className="text-secondary"
-          style={{ fontSize: "0.85em", fontWeight: "normal" }}
+          style={{ fontSize: "0.85em", fontWeight: "normal", marginInlineStart: "4px" }}
         >
           ({usdStr})
         </span>
-      </>
+      </span>
     );
   };
 
-  const isAdded = isAddedToCartProducts?.(product?.id, activeColor);
+  const isAdded = isAddedToCartProducts?.(product?.id, activeColor, activeSize);
   const cartItem = cartProducts?.find(
     (elm) =>
       elm.id == product?.id &&
-      (!activeColor || elm.selectedColor === activeColor)
+      (!activeColor || elm.selectedColor === activeColor) &&
+      (!activeSize || elm.selectedSize === activeSize)
   );
   const currentQuantity = isAdded && cartItem ? cartItem.quantity : quantity;
 
@@ -272,9 +336,9 @@ export default function Details1({ product, locale = "en" }) {
                       </div>
                     </div>
                     <div className="tf-product-info-desc">
-                      {(egpPrice !== 0 || usdPrice !== 0) && (
-                        <div className="tf-product-info-price">
-                          {discount > 0 ? (
+                      <div className="tf-product-info-price">
+                        {egpPrice > 0 || usdPrice > 0 ? (
+                          discount > 0 ? (
                             <>
                               <h5 className="price-on-sale font-2">
                                 {formatDualPrice(egpFinalPrice, usdFinalPrice)}
@@ -290,9 +354,13 @@ export default function Details1({ product, locale = "en" }) {
                             <h5 className="price-on-sale font-2">
                               {formatDualPrice(egpPrice, usdPrice)}
                             </h5>
-                          )}
-                        </div>
-                      )}
+                          )
+                        ) : (
+                          <h5 className="price-on-sale font-2 text-secondary" style={{ fontSize: "1.1rem" }}>
+                            {locale === "ar" ? "السعر عند الطلب" : "Price on request"}
+                          </h5>
+                        )}
+                      </div>
                       {product.weight && (
                         <div className="tf-product-info-weight">
                           <p className="text-caption-1">
@@ -314,7 +382,17 @@ export default function Details1({ product, locale = "en" }) {
                     </div>
                   </div>
                   <div className="tf-product-info-choose-option">
-                    {/* Color selection */}
+                    {/* Size selection */}
+                    {availableSizes && availableSizes.length > 0 && (
+                      <SizeSelect
+                        sizes={availableSizes}
+                        activeSize={activeSize}
+                        setActiveSize={setActiveSize}
+                        locale={locale}
+                      />
+                    )}
+
+                    {/* Lighting Color selection */}
                     {availableColors && availableColors.length > 0 && (
                       <ColorSelect
                         activeColor={activeColor}
@@ -343,7 +421,7 @@ export default function Details1({ product, locale = "en" }) {
                       <div className="tf-product-info-by-btn mb_10">
                         <a
                           onClick={() => {
-                            // Create a complete product object for the cart with selectedColor and multi-currency
+                            // Create a complete product object for the cart with selectedColor, selectedSize, and multi-currency
                             const productForCart = {
                               id: product.id,
                               name: product.name,
@@ -357,13 +435,17 @@ export default function Details1({ product, locale = "en" }) {
                               originalDollarPrice: usdPrice,
                               discount: discount,
                               category: product.category,
-                              weight: product.weight,
+                              weight: selectedSizeObj?.size
+                                ? `${locale === "ar" ? "المقاس: " : "Size: "}${selectedSizeObj.size}`
+                                : product.weight,
                               selectedColor: activeColor,
                               color: activeColor,
+                              selectedSize: activeSize,
+                              size: activeSize,
                               quantity: quantity,
                               cartId: `${product.id}${
                                 activeColor ? `-${activeColor}` : ""
-                              }`,
+                              }${activeSize ? `-${activeSize}` : ""}`,
                             };
 
                             addProductToCart(productForCart, quantity, true);
@@ -380,50 +462,20 @@ export default function Details1({ product, locale = "en" }) {
                               className="tf-qty-price total-price"
                               style={{ marginInlineStart: "6px" }}
                             >
-                              {currency === "USD" ? (
-                                <>
-                                  <span>
-                                    $
-                                    {(usdFinalPrice * currentQuantity).toFixed(
-                                      2
-                                    )}
-                                  </span>{" "}
-                                  <span
-                                    style={{
-                                      fontSize: "0.85em",
-                                      opacity: 0.9,
-                                    }}
-                                  >
-                                    ({locale === "ar" ? "ج.م" : "EGP"}{" "}
-                                    {(egpFinalPrice * currentQuantity).toFixed(
-                                      2
-                                    )}
-                                    )
-                                  </span>
-                                </>
-                              ) : (
-                                <>
-                                  <span>
-                                    {locale === "ar" ? "ج.م" : "EGP"}{" "}
-                                    {(egpFinalPrice * currentQuantity).toFixed(
-                                      2
-                                    )}
-                                  </span>{" "}
-                                  <span
-                                    style={{
-                                      fontSize: "0.85em",
-                                      opacity: 0.9,
-                                    }}
-                                  >
-                                    (
-                                    $
-                                    {(usdFinalPrice * currentQuantity).toFixed(
-                                      2
-                                    )}
-                                    )
-                                  </span>
-                                </>
-                              )}
+                              <span>
+                                {locale === "ar" ? "ج.م" : "EGP"}{" "}
+                                {(egpFinalPrice * currentQuantity).toFixed(2)}
+                              </span>{" "}
+                              <span
+                                style={{
+                                  fontSize: "0.85em",
+                                  opacity: 0.9,
+                                }}
+                              >
+                                ($
+                                {(usdFinalPrice * currentQuantity).toFixed(2)}{" "}
+                                USD)
+                              </span>
                             </span>
                           )}
                         </a>

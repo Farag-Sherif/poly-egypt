@@ -94,6 +94,7 @@ export default function Context({ children }) {
       discount: product.discount,
       category: product.category,
       selectedColor: product.selectedColor || product.color || null,
+      selectedSize: product.selectedSize || product.size || null,
       dollarPrice:
         typeof product.dollarPrice === "number"
           ? product.dollarPrice
@@ -198,19 +199,17 @@ export default function Context({ children }) {
     }
   };
 
-  const isAddedToCartProducts = (id, selectedColor) => {
-    if (selectedColor !== undefined && selectedColor !== null) {
-      return cartProducts.some(
-        (elm) =>
-          elm.id == id &&
-          (elm.selectedColor === selectedColor ||
-            (!elm.selectedColor && !selectedColor))
-      );
-    }
-    if (cartProducts.filter((elm) => elm.id == id)[0]) {
+  const isAddedToCartProducts = (id, selectedColor, selectedSize) => {
+    return cartProducts.some((elm) => {
+      if (elm.id != id) return false;
+      if (selectedColor !== undefined && selectedColor !== null) {
+        if ((elm.selectedColor || "") !== (selectedColor || "")) return false;
+      }
+      if (selectedSize !== undefined && selectedSize !== null) {
+        if ((elm.selectedSize || "") !== (selectedSize || "")) return false;
+      }
       return true;
-    }
-    return false;
+    });
   };
 
   const addProductToCart = async (product, qty, isModal = true) => {
@@ -218,8 +217,10 @@ export default function Context({ children }) {
     const productId = typeof product === "object" ? product.id : product;
     const selectedColor =
       typeof product === "object" ? product.selectedColor : undefined;
+    const selectedSize =
+      typeof product === "object" ? product.selectedSize : undefined;
 
-    if (isAddedToCartProducts(productId, selectedColor)) {
+    if (isAddedToCartProducts(productId, selectedColor, selectedSize)) {
       return;
     }
 

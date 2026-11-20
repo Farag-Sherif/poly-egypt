@@ -28,6 +28,9 @@ const transformApiProduct = (apiProduct, currentLocale = "en") => {
         ? apiProduct.media[0].image_path
         : apiProduct.image_path, // Remove color-based hover images
     price: apiProduct.price,
+    price_usd: apiProduct.price_usd,
+    sizes: apiProduct.sizes || [],
+    colors: apiProduct.colors || [],
     oldPrice:
       apiProduct.discount > 0
         ? Math.round(apiProduct.price / (1 - apiProduct.discount / 100))
