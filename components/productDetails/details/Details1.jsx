@@ -297,7 +297,8 @@ export default function Details1({ product, locale = "en" }) {
             <div className="col-md-6">
               <div className="tf-product-media-wrap sticky-top">
                 <Slider1
-                  firstItem={currentColorImage || product.image_path}
+                  firstItem={product.image_path}
+                  productImage={product.image_path}
                   media={product.media}
                   colors={availableColors}
                   activeColor={activeColor}

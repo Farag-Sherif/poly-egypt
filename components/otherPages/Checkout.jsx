@@ -88,31 +88,64 @@ export default function Checkout() {
   // Checkout mutations
   const checkoutMutation = useMutation({
     mutationFn: async (data) => {
+      const cartItems = cartProducts?.map((item) => {
+        let colorVal =
+          item.selectedColor ||
+          item.color ||
+          (typeof item.pivot?.color === "object"
+            ? item.pivot?.color?.color ||
+              item.pivot?.color?.value ||
+              item.pivot?.color?.name ||
+              ""
+            : item.pivot?.color) ||
+          "";
+
+        let sizeVal =
+          item.selectedSize ||
+          item.size ||
+          (typeof item.pivot?.size === "object"
+            ? item.pivot?.size?.size ||
+              item.pivot?.size?.value ||
+              item.pivot?.size?.name ||
+              ""
+            : item.pivot?.size) ||
+          "";
+
+        if (typeof colorVal === "object") {
+          colorVal = colorVal.color || colorVal.value || colorVal.name || "";
+        }
+        if (typeof sizeVal === "object") {
+          sizeVal = sizeVal.size || sizeVal.value || sizeVal.name || "";
+        }
+
+        // Fallback if product has available sizes/colors but none was chosen
+        if (!sizeVal && Array.isArray(item.sizes) && item.sizes.length > 0) {
+          const firstS = item.sizes[0];
+          sizeVal = typeof firstS === "object" ? firstS.size || firstS.value || firstS.name || "" : firstS;
+        }
+        if (!colorVal && Array.isArray(item.colors) && item.colors.length > 0) {
+          const firstC = item.colors[0];
+          colorVal = typeof firstC === "object" ? firstC.color || firstC.value || firstC.name || "" : firstC;
+        }
+
+        return {
+          item_id: item.id,
+          qty: item.quantity || item.pivot?.qty || 1,
+          weight: item.weight || "",
+          color: colorVal,
+          size: sizeVal,
+        };
+      });
+
       if (user) {
         // User is authenticated - use regular checkout with selected address
         return await checkout({
           address_id: selectedAddressId,
           notes: data.notes,
+          cart: cartItems,
         });
       } else {
         // User not authenticated - use checkout without auth
-        const cartItems = cartProducts?.map((item) => ({
-          item_id: item.id,
-          qty: item.quantity || item.pivot?.qty || 1,
-          color: item.selectedColor
-            ? typeof item.selectedColor === "object"
-              ? item.selectedColor?.name || item.selectedColor?.value || ""
-              : item.selectedColor
-            : item.pivot?.color || "",
-          size: item.selectedSize
-            ? typeof item.selectedSize === "object"
-              ? item.selectedSize?.name ||
-                item.selectedSize?.value ||
-                item.selectedSize?.size ||
-                ""
-              : item.selectedSize
-            : item.pivot?.size || "",
-        }));
 
         // Find the selected city object to get the city ID
         const selectedCity = cities?.find((city) => city.name === data.city);

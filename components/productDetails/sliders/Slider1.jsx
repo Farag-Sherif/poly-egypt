@@ -1,7 +1,7 @@
 import Drift from "drift-zoom";
 import PhotoSwipeLightbox from "photoswipe/lightbox";
-import { useEffect, useRef, useState } from "react";
-import { Navigation, Thumbs } from "swiper/modules";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Thumbs } from "swiper/modules";
 import { Swiper, SwiperSlide } from "swiper/react";
 import Image from "@/src/compat/AppImage";
 
@@ -9,99 +9,100 @@ export default function Slider1({
   activeColor = "",
   setActiveColor = () => {},
   firstItem,
+  productImage,
   media = [],
   colors = [],
 }) {
-  // Create image items from API data
-  const createImageItems = () => {
-    const items = [];
+  // Create stable image items from API data
+  const items = useMemo(() => {
+    const list = [];
+    const seenSrcs = new Set();
 
-    // Add main product image
-    if (firstItem) {
-      items.push({
+    const addImg = (src, color = "default", alt = "Product Image") => {
+      if (!src || typeof src !== "string" || seenSrcs.has(src)) return;
+      seenSrcs.add(src);
+      list.push({
+        id: list.length + 1,
+        src,
+        alt,
+        width: 713,
+        height: 713,
+        color,
+      });
+    };
+
+    // 1. Add main product image
+    const mainImg = firstItem || productImage;
+    if (mainImg) {
+      addImg(mainImg, "default", "Product Image");
+    }
+
+    // 2. Add media images
+    if (Array.isArray(media) && media.length > 0) {
+      media.forEach((mediaItem, index) => {
+        const mSrc = mediaItem?.image_path || mediaItem?.image || mediaItem?.src;
+        if (mSrc) {
+          addImg(mSrc, "default", `Product Image ${index + 2}`);
+        }
+      });
+    }
+
+    // 3. Add color variant images
+    if (Array.isArray(colors) && colors.length > 0) {
+      colors.forEach((colorItem) => {
+        const colorImg =
+          colorItem?.image_path || colorItem?.imgSrc || colorItem?.image;
+        const colorVal =
+          colorItem?.color || colorItem?.value || colorItem?.name || "";
+
+        if (colorImg) {
+          const existingItem = list.find((item) => item.src === colorImg);
+          if (existingItem) {
+            existingItem.color = colorVal;
+          } else {
+            addImg(colorImg, colorVal, `Color ${colorVal}`);
+          }
+        }
+      });
+    }
+
+    if (list.length === 0) {
+      list.push({
         id: 1,
-        src: firstItem,
-        alt: "Product Image",
+        src: "/images/products/default-product.jpg",
+        alt: "Default Product Image",
         width: 713,
         height: 713,
         color: "default",
       });
     }
 
-    // Add media images
-    if (media && media.length > 0) {
-      media.forEach((mediaItem, index) => {
-        // const mediaPath = `https://atlala.test.do-go.net/images/${mediaItem.image}`;
-        items.push({
-          id: index + 2,
-          src: mediaItem.image_path,
-          alt: `Product Image ${index + 2}`,
-          width: 713,
-          height: 713,
-          color: "default",
-        });
-      });
-    }
-
-    // Add color images
-    if (colors && colors.length > 0) {
-      colors.forEach((colorItem, index) => {
-        const colorImg =
-          colorItem.image_path || colorItem.imgSrc || colorItem.image;
-        const colorVal =
-          colorItem.color || colorItem.value || colorItem.name || colorItem;
-
-        if (colorImg) {
-          const existingItem = items.find((item) => item.src === colorImg);
-          if (existingItem) {
-            existingItem.color = colorVal;
-          } else {
-            items.push({
-              id: items.length + 1,
-              src: colorImg,
-              alt: `Color ${colorVal}`,
-              width: 713,
-              height: 713,
-              color: colorVal,
-            });
-          }
-        }
-      });
-    }
-
-    return items.length > 0
-      ? items
-      : [
-          {
-            id: 1,
-            src: "/images/products/default-product.jpg",
-            alt: "Default Product Image",
-            width: 713,
-            height: 713,
-            color: "default",
-          },
-        ];
-  };
-
-  const items = createImageItems();
+    return list;
+  }, [firstItem, productImage, media, colors]);
 
   useEffect(() => {
-    // Function to initialize Drift
+    let driftInstances = [];
     const imageZoom = () => {
       const driftAll = document.querySelectorAll(".tf-image-zoom");
       const pane = document.querySelector(".tf-zoom-main");
 
       driftAll.forEach((el) => {
-        new Drift(el, {
-          zoomFactor: 2,
-          paneContainer: pane,
-          inlinePane: false,
-          handleTouch: false,
-          hoverBoundingBox: true,
-          containInline: true,
-        });
+        try {
+          const drift = new Drift(el, {
+            zoomFactor: 2,
+            paneContainer: pane,
+            inlinePane: false,
+            handleTouch: false,
+            hoverBoundingBox: true,
+            containInline: true,
+          });
+          driftInstances.push(drift);
+        } catch (e) {
+          // ignore drift init error
+        }
       });
     };
+
     imageZoom();
     const zoomElements = document.querySelectorAll(".tf-image-zoom");
 
@@ -124,32 +125,38 @@ export default function Slider1({
       element.addEventListener("mouseleave", handleMouseLeave);
     });
 
-    // Cleanup event listeners on component unmount
     return () => {
       zoomElements.forEach((element) => {
         element.removeEventListener("mouseover", handleMouseOver);
         element.removeEventListener("mouseleave", handleMouseLeave);
       });
+      driftInstances.forEach((d) => {
+        try {
+          d.destroy?.();
+        } catch (e) {}
+      });
     };
-  }, [items]); // Dependency on items to reinitialize when images change
+  }, [items]);
 
   const lightboxRef = useRef(null);
   useEffect(() => {
-    // Initialize PhotoSwipeLightbox
-    const lightbox = new PhotoSwipeLightbox({
-      gallery: "#gallery-swiper-started",
-      children: ".item",
-      pswpModule: () => import("photoswipe"),
-    });
+    let lightbox = null;
+    try {
+      lightbox = new PhotoSwipeLightbox({
+        gallery: "#gallery-swiper-started",
+        children: ".item",
+        pswpModule: () => import("photoswipe"),
+      });
+      lightbox.init();
+      lightboxRef.current = lightbox;
+    } catch (e) {
+      console.warn("PhotoSwipe init error:", e);
+    }
 
-    lightbox.init();
-
-    // Store the lightbox instance in the ref for later use
-    lightboxRef.current = lightbox;
-
-    // Cleanup: destroy the lightbox when the component unmounts
     return () => {
-      lightbox.destroy();
+      try {
+        lightbox?.destroy();
+      } catch (e) {}
     };
   }, []);
 
@@ -157,114 +164,113 @@ export default function Slider1({
   const [activeIndex, setActiveIndex] = useState(0);
   const swiperRef = useRef(null);
 
+  // Safely slide to matching color when activeColor changes
   useEffect(() => {
-    if (activeColor && swiperRef.current) {
-      const slideIndex = items.findIndex(
-        (item) => item.color === activeColor || (firstItem && item.src === firstItem)
-      );
-      if (slideIndex !== -1 && slideIndex !== activeIndex) {
+    if (!activeColor || !swiperRef.current || swiperRef.current.destroyed) return;
+
+    const slideIndex = items.findIndex(
+      (item) => item.color && item.color !== "default" && item.color === activeColor
+    );
+
+    if (slideIndex !== -1 && slideIndex !== activeIndex) {
+      try {
         swiperRef.current.slideTo(slideIndex);
         setActiveIndex(slideIndex);
+      } catch (err) {
+        console.warn("Swiper slide error:", err);
       }
     }
-  }, [activeColor, firstItem, items]);
-
-  // If we only have one image, render simple image display
-  if (items.length === 1) {
-    return (
-      <div className="single-image-display">
-        <div className="tf-product-media-main">
-          <div className="item">
-            <Image
-              className="tf-image-zoom lazyload"
-              data-zoom={items[0].src}
-              data-src={items[0].src}
-              alt={items[0].alt}
-              src={items[0].src}
-              width={items[0].width}
-              height={items[0].height}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  }, [activeColor, items]);
 
   return (
-    <div className="thumbs-slider">
-      <Swiper
-        className="swiper tf-product-media-thumbs other-image-zoom"
-        dir="ltr"
-        direction="vertical"
-        spaceBetween={10}
-        slidesPerView={Math.min(6, items.length)}
-        onSwiper={setThumbsSwiper}
-        modules={[Thumbs]}
-        initialSlide={0}
-        breakpoints={{
-          0: {
-            direction: "horizontal",
-            slidesPerView: Math.min(4, items.length),
-          },
-          820: {
-            direction: "horizontal",
-            slidesPerView: Math.min(5, items.length),
-          },
-          920: {
-            direction: "horizontal",
-            slidesPerView: Math.min(6, items.length),
-          },
-          1020: {
-            direction: "horizontal",
-            slidesPerView: Math.min(6, items.length),
-          },
-          1200: {
-            direction: "vertical",
-            slidesPerView: Math.min(6, items.length),
-          },
-        }}
-      >
-        {items.map((slide, index) => (
-          <SwiperSlide
-            className="swiper-slide stagger-item"
-            data-color={slide.color}
-            key={index}
-          >
-            <div className="item">
-              <Image
-                className="lazyload"
-                data-src={slide.src}
-                alt={slide.alt}
-                src={slide.src}
-                width={slide.width}
-                height={slide.height}
-              />
-            </div>
-          </SwiperSlide>
-        ))}
-      </Swiper>
+    <div className={`thumbs-slider ${items.length <= 1 ? "single-image-mode" : ""}`}>
+      {items.length > 1 && (
+        <Swiper
+          className="swiper tf-product-media-thumbs other-image-zoom"
+          dir="ltr"
+          direction="vertical"
+          spaceBetween={10}
+          slidesPerView={Math.min(6, items.length)}
+          onSwiper={setThumbsSwiper}
+          modules={[Thumbs]}
+          initialSlide={0}
+          breakpoints={{
+            0: {
+              direction: "horizontal",
+              slidesPerView: Math.min(4, items.length),
+            },
+            820: {
+              direction: "horizontal",
+              slidesPerView: Math.min(5, items.length),
+            },
+            920: {
+              direction: "horizontal",
+              slidesPerView: Math.min(6, items.length),
+            },
+            1020: {
+              direction: "horizontal",
+              slidesPerView: Math.min(6, items.length),
+            },
+            1200: {
+              direction: "vertical",
+              slidesPerView: Math.min(6, items.length),
+            },
+          }}
+        >
+          {items.map((slide, index) => (
+            <SwiperSlide
+              className="swiper-slide stagger-item"
+              data-color={slide.color}
+              key={slide.id || index}
+            >
+              <div className="item">
+                <Image
+                  className="lazyload"
+                  data-src={slide.src}
+                  alt={slide.alt}
+                  src={slide.src}
+                  width={slide.width}
+                  height={slide.height}
+                />
+              </div>
+            </SwiperSlide>
+          ))}
+        </Swiper>
+      )}
+
       <Swiper
         dir="ltr"
         className="swiper tf-product-media-main"
         id="gallery-swiper-started"
         spaceBetween={10}
         slidesPerView={1}
-        thumbs={{ swiper: thumbsSwiper }}
+        thumbs={{
+          swiper:
+            thumbsSwiper && !thumbsSwiper.destroyed ? thumbsSwiper : null,
+        }}
         modules={[Thumbs]}
         onSwiper={(swiper) => (swiperRef.current = swiper)}
         onSlideChange={(swiper) => {
-          if (items[swiper.activeIndex]) {
-            setActiveIndex(swiper.activeIndex);
-            const slideColor = items[swiper.activeIndex]?.color;
-            if (slideColor && slideColor !== "default" && setActiveColor) {
+          try {
+            const idx = swiper.activeIndex;
+            setActiveIndex(idx);
+            const slideColor = items[idx]?.color;
+            if (
+              slideColor &&
+              slideColor !== "default" &&
+              slideColor !== activeColor &&
+              typeof setActiveColor === "function"
+            ) {
               setActiveColor(slideColor);
             }
+          } catch (err) {
+            console.warn("Swiper onSlideChange error:", err);
           }
         }}
       >
         {items.map((slide, index) => (
           <SwiperSlide
-            key={index}
+            key={slide.id || index}
             className="swiper-slide"
             data-color={slide.color}
           >

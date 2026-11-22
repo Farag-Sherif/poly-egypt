@@ -191,7 +191,11 @@ function ProductCard1({
       originalDollarPrice: originalUsd || currentUsd,
       weight: product.weight,
       selectedSize: Array.isArray(product.sizes) && product.sizes.length > 0 ? product.sizes[0]?.size : null,
+      size: Array.isArray(product.sizes) && product.sizes.length > 0 ? product.sizes[0]?.size : null,
       selectedColor: Array.isArray(product.colors) && product.colors.length > 0 ? product.colors[0]?.color : null,
+      color: Array.isArray(product.colors) && product.colors.length > 0 ? product.colors[0]?.color : null,
+      sizes: product.sizes,
+      colors: product.colors,
       cartId: `${product.id}`,
     };
 
@@ -221,7 +225,11 @@ function ProductCard1({
       originalDollarPrice: originalUsd || currentUsd,
       weight: product.weight,
       selectedSize: Array.isArray(product.sizes) && product.sizes.length > 0 ? product.sizes[0]?.size : null,
+      size: Array.isArray(product.sizes) && product.sizes.length > 0 ? product.sizes[0]?.size : null,
       selectedColor: Array.isArray(product.colors) && product.colors.length > 0 ? product.colors[0]?.color : null,
+      color: Array.isArray(product.colors) && product.colors.length > 0 ? product.colors[0]?.color : null,
+      sizes: product.sizes,
+      colors: product.colors,
       cartId: `${product.id}`,
     };
 

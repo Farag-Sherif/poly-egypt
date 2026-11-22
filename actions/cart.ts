@@ -8,12 +8,16 @@ export async function getCart() {
 export async function addToCart(
   productId: number,
   qty: number,
-  weight: string
+  weight: string,
+  color?: string,
+  size?: string
 ) {
   const formData = new FormData();
   formData.append("item_id", productId.toString());
   formData.append("qty", qty.toString());
-  formData.append("weight", weight);
+  formData.append("weight", weight || "");
+  if (color) formData.append("color", color);
+  if (size) formData.append("size", size);
   const response = await postFormData("/add-to-cart", formData);
   return response;
 }
@@ -112,11 +116,26 @@ export async function bulkAddToCart(cartItems) {
   };
 }
 
-export async function checkout({ address_id, notes }) {
+export async function checkout({ address_id, notes, cart }: { address_id: number; notes?: string; cart?: any[] }) {
   const formData = new FormData();
   formData.append("address_id", address_id.toString());
   formData.append("type", "cod");
-  formData.append("notes", notes);
+  formData.append("notes", notes || "");
+
+  if (cart && cart.length > 0) {
+    cart.forEach((item, index) => {
+      formData.append(`cart[${index}][item_id]`, (item.item_id || item.id).toString());
+      formData.append(`cart[${index}][qty]`, (item.qty || item.quantity || 1).toString());
+      formData.append(`cart[${index}][weight]`, item.weight || "");
+      if (item.color) {
+        formData.append(`cart[${index}][color]`, item.color.toString());
+      }
+      if (item.size) {
+        formData.append(`cart[${index}][size]`, item.size.toString());
+      }
+    });
+  }
+
   const response = await postFormData("/checkout", formData);
   return response;
 }
@@ -145,9 +164,15 @@ export async function checkoutWithOutAuth({
   // Cart items
   if (cart && cart.length > 0) {
     cart.forEach((item, index) => {
-      formData.append(`cart[${index}][item_id]`, item.item_id.toString());
-      formData.append(`cart[${index}][qty]`, item.qty.toString());
+      formData.append(`cart[${index}][item_id]`, (item.item_id || item.id).toString());
+      formData.append(`cart[${index}][qty]`, (item.qty || item.quantity || 1).toString());
       formData.append(`cart[${index}][weight]`, item.weight || "");
+      if (item.color) {
+        formData.append(`cart[${index}][color]`, item.color.toString());
+      }
+      if (item.size) {
+        formData.append(`cart[${index}][size]`, item.size.toString());
+      }
     });
   }
   const response = await postFormData("/checkout", formData);
