@@ -138,7 +138,11 @@ export default function ColorSelect({
                       colorDisplay?.toLowerCase?.() === "white"
                         ? "1px solid #ddd"
                         : "1px solid transparent",
-                    boxShadow: isSelected ? "0 0 0 2px #000" : "none",
+                    boxShadow: isSelected
+                      ? "0 0 0 2px #fff, 0 0 0 4px #0d6efd"
+                      : "0 0 0 1px #e2e8f0",
+                    transition: "box-shadow 0.2s ease, transform 0.2s ease",
+                    transform: isSelected ? "scale(1.08)" : "scale(1)",
                   }}
                 />
                 <span className="tooltip">{colorLabel}</span>
