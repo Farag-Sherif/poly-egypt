@@ -82,9 +82,17 @@ export default function Slider1({
 
   useEffect(() => {
     let driftInstances = [];
+    const isDesktop =
+      typeof window !== "undefined" &&
+      window.innerWidth >= 1200 &&
+      window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+    if (!isDesktop) return;
+
     const imageZoom = () => {
       const driftAll = document.querySelectorAll(".tf-image-zoom");
       const pane = document.querySelector(".tf-zoom-main");
+      if (!pane) return;
 
       driftAll.forEach((el) => {
         try {
@@ -244,6 +252,11 @@ export default function Slider1({
         id="gallery-swiper-started"
         spaceBetween={10}
         slidesPerView={1}
+        touchReleaseOnEdges={true}
+        resistanceRatio={0.85}
+        touchAngle={45}
+        nested={false}
+        touchStartPreventDefault={false}
         thumbs={{
           swiper:
             thumbsSwiper && !thumbsSwiper.destroyed ? thumbsSwiper : null,
@@ -289,6 +302,7 @@ export default function Slider1({
                 src={slide.src}
                 width={slide.width}
                 height={slide.height}
+                draggable="false"
               />
             </a>
           </SwiperSlide>

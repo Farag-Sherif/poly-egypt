@@ -214,6 +214,95 @@
     }
 }
 
+.btn-add-to-cart {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    .btn-cart-text {
+        white-space: nowrap;
+        letter-spacing: 0.05em;
+    }
+
+    .btn-cart-separator {
+        opacity: 0.75;
+        margin: 0 1px;
+        user-select: none;
+    }
+
+    .tf-qty-price {
+        white-space: nowrap !important;
+        letter-spacing: 0 !important;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: baseline;
+        gap: 5px;
+
+        span,
+        .price-egp,
+        .price-usd {
+            white-space: nowrap !important;
+            letter-spacing: 0 !important;
+        }
+
+        .price-usd {
+            font-size: 0.88em;
+            opacity: 0.9;
+        }
+    }
+
+    @media (max-width: 767px) {
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        padding: 9px 14px !important;
+        min-height: 52px !important;
+        height: auto !important;
+        gap: 2px !important;
+        line-height: 1.25 !important;
+
+        .btn-cart-text {
+            font-size: 13.5px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.04em !important;
+            line-height: 1.2 !important;
+            white-space: nowrap !important;
+        }
+
+        .btn-cart-separator {
+            display: none !important;
+        }
+
+        .tf-qty-price {
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            letter-spacing: 0 !important;
+            margin: 0 !important;
+            gap: 5px !important;
+            opacity: 0.95 !important;
+            line-height: 1.2 !important;
+            white-space: nowrap !important;
+            justify-content: center !important;
+
+            span,
+            .price-egp,
+            .price-usd {
+                letter-spacing: 0 !important;
+                white-space: nowrap !important;
+            }
+
+            .price-usd {
+                font-size: 0.88em !important;
+            }
+        }
+    }
+}
+
 .btn-style-3 {
     display: flex;
     align-items: center;

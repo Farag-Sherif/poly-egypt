@@ -9,9 +9,17 @@ export default function Grid2({
 }) {
   useEffect(() => {
     // Function to initialize Drift
+    const isDesktop =
+      typeof window !== "undefined" &&
+      window.innerWidth >= 1200 &&
+      window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+    if (!isDesktop) return;
+
     const imageZoom = () => {
       const driftAll = document.querySelectorAll(".tf-image-zoom");
       const pane = document.querySelector(".tf-zoom-main");
+      if (!pane) return;
 
       driftAll.forEach((el) => {
         new Drift(el, {

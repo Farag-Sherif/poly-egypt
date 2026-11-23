@@ -459,33 +459,34 @@ export default function Details1({ product, locale = "en" }) {
                           }}
                           className="btn-style-2 flex-grow-1 text-btn-uppercase fw-6 btn-add-to-cart"
                         >
-                          <span>
+                          <span className="btn-cart-text">
                             {isAdded
                               ? getTranslation("alreadyAdded", locale)
-                              : getTranslation("addToCart", locale) + " -"}
+                              : getTranslation("addToCart", locale)}
                           </span>
                           {(egpPrice !== 0 || usdPrice !== 0) && (
-                            <span
-                              className="tf-qty-price total-price d-inline-flex align-items-center gap-1"
-                              style={{ marginInlineStart: "6px" }}
-                            >
-                              <span>
-                                {locale === "ar" ? "ج.م" : "EGP"}{" "}
-                                {(egpFinalPrice * currentQuantity).toFixed(2)}
-                              </span>{" "}
-                              <span
-                                dir="ltr"
-                                style={{
-                                  fontSize: "0.85em",
-                                  opacity: 0.9,
-                                  unicodeBidi: "isolate",
-                                }}
-                              >
-                                ($
-                                {(usdFinalPrice * currentQuantity).toFixed(2)}{" "}
-                                USD)
+                            <>
+                              <span className="btn-cart-separator">-</span>
+                              <span className="tf-qty-price total-price">
+                                <span className="price-egp">
+                                  {locale === "ar" ? "ج.م" : "EGP"}{" "}
+                                  {(egpFinalPrice * currentQuantity).toFixed(2)}
+                                </span>{" "}
+                                <span
+                                  dir="ltr"
+                                  className="price-usd"
+                                  style={{
+                                    fontSize: "0.85em",
+                                    opacity: 0.9,
+                                    unicodeBidi: "isolate",
+                                  }}
+                                >
+                                  ($
+                                  {(usdFinalPrice * currentQuantity).toFixed(2)}{" "}
+                                  USD)
+                                </span>
                               </span>
-                            </span>
+                            </>
                           )}
                         </a>
                         <a
